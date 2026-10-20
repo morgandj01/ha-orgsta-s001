@@ -40,6 +40,12 @@
       },
       "labels_printed": {
         "name": "Etichette stampate"
+      },
+      "roll_used": {
+        "name": "Rotolo"
+      },
+      "roll_left": {
+        "name": "Etichette rimaste"
       }
     },
     "binary_sensor": {
@@ -54,6 +60,9 @@
       },
       "powered": {
         "name": "Accesa"
+      },
+      "roll_counted": {
+        "name": "Rotolo contato da nuovo"
       }
     },
     "button": {
@@ -68,6 +77,9 @@
       },
       "print_test": {
         "name": "Stampa di prova"
+      },
+      "roll_new": {
+        "name": "Rotolo nuovo"
       }
     },
     "image": {
@@ -78,6 +90,9 @@
     "number": {
       "density": {
         "name": "Intensità"
+      },
+      "roll_capacity": {
+        "name": "Etichette in un rotolo"
       }
     },
     "select": {

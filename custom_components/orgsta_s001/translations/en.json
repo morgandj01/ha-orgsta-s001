@@ -40,6 +40,12 @@
       },
       "labels_printed": {
         "name": "Labels printed"
+      },
+      "roll_used": {
+        "name": "Roll"
+      },
+      "roll_left": {
+        "name": "Labels left"
       }
     },
     "binary_sensor": {
@@ -54,6 +60,9 @@
       },
       "powered": {
         "name": "Powered"
+      },
+      "roll_counted": {
+        "name": "Roll counted from new"
       }
     },
     "button": {
@@ -68,6 +77,9 @@
       },
       "print_test": {
         "name": "Test print"
+      },
+      "roll_new": {
+        "name": "New roll"
       }
     },
     "image": {
@@ -78,6 +90,9 @@
     "number": {
       "density": {
         "name": "Density"
+      },
+      "roll_capacity": {
+        "name": "Labels per roll"
       }
     },
     "select": {

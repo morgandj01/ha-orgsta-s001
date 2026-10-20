@@ -30,7 +30,12 @@ Serve almeno un adattatore Bluetooth o un proxy ESPHome con **connessioni attive
 | Batteria | % letta all'ultima connessione |
 | Coperchio, Carta finita, In stampa | sensori binari |
 | Ultima stampa | quando e cosa (attributo `contenuto`) |
-| Etichette stampate | contatore |
+| Etichette stampate | contatore di tutte le etichette uscite |
+| Rotolo | etichette uscite dal rotolo dentro (anche quelle vuote di *Avanza etichetta*); attributi `capienza`, `rimaste`, `contato_da_nuovo` |
+| Etichette rimaste | quante ne restano nel rotolo, quando la capienza è nota e il rotolo è contato dall'inizio |
+| Etichette in un rotolo | la capienza: la impara da sola quando la carta finisce su un rotolo contato da nuovo (più di 10 etichette), si può anche scrivere a mano |
+| Rotolo contato da nuovo | acceso dopo *Rotolo nuovo*, si spegne quando ha imparato la capienza |
+| Rotolo nuovo | pulsante da premere quando cambi il rotolo: il conto riparte da zero |
 | Anteprima etichetta | immagine dell'ultima etichetta stampata o in anteprima |
 | Carta caricata | il rotolo dentro (default 12 x 40 mm) |
 | Intensità | 1-15, default 9 |

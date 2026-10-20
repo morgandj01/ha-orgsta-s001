@@ -11,6 +11,7 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -37,6 +38,20 @@ class PrinterState:
     powered: bool | None = None
     seen_time: datetime | None = None
     extra: dict = field(default_factory=dict)
+    roll_used: int = 0
+    roll_capacity: int | None = None
+    roll_counted: bool = False
+    roll_changed: datetime | None = None
+
+    @property
+    def roll_left(self) -> int | None:
+        if not self.roll_counted or not self.roll_capacity:
+            return None
+        return max(0, self.roll_capacity - self.roll_used)
+
+
+# Sotto queste etichette un rotolo «finito» non insegna niente (carta tolta a metà, sensore che sbaglia)
+ROLL_MIN_LEARN = 10
 
 
 type S001ConfigEntry = ConfigEntry["S001Coordinator"]
@@ -56,6 +71,55 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.quick_text: str = ""
         self.data = PrinterState()
         self._auto_task: asyncio.Task | None = None
+        self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{address.replace(':', '').lower()}")
+
+    # ---- rotolo: etichette usate da quando è stato messo, capienza imparata quando finisce ----
+    async def async_load_roll(self) -> None:
+        data = await self._store.async_load() or {}
+        d = self.data
+        d.roll_used = int(data.get("used") or 0)
+        cap = data.get("capacity")
+        d.roll_capacity = int(cap) if cap else None
+        d.roll_counted = bool(data.get("counted"))
+        d.roll_changed = dt_util.parse_datetime(data["changed"]) if data.get("changed") else None
+
+    @callback
+    def _save_roll(self) -> None:
+        d = self.data
+        self._store.async_delay_save(
+            lambda: {
+                "used": d.roll_used,
+                "capacity": d.roll_capacity,
+                "counted": d.roll_counted,
+                "changed": d.roll_changed.isoformat() if d.roll_changed else None,
+            },
+            1,
+        )
+
+    @callback
+    def async_new_roll(self) -> None:
+        d = self.data
+        d.roll_used = 0
+        d.roll_counted = True
+        d.roll_changed = dt_util.utcnow()
+        self._save_roll()
+        self.async_set_updated_data(d)
+
+    @callback
+    def async_set_roll_capacity(self, value: int | None) -> None:
+        self.data.roll_capacity = int(value) if value else None
+        self._save_roll()
+        self.async_set_updated_data(self.data)
+
+    @callback
+    def _roll_paper_out(self) -> None:
+        """Carta finita su un rotolo contato dall'inizio: quante ne ha fatte è la capienza."""
+        d = self.data
+        if d.roll_counted and d.roll_used > ROLL_MIN_LEARN:
+            _LOGGER.info("S001 %s: rotolo finito dopo %s etichette, capienza imparata", self.address, d.roll_used)
+            d.roll_capacity = d.roll_used
+            d.roll_counted = False
+            self._save_roll()
 
     # ---- accesa/spenta dagli annunci Bluetooth (i proxy li sentono già, nessuna connessione) ----
     @callback
@@ -122,6 +186,9 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
 
     @callback
     def _on_status(self, st: Status) -> None:
+        prev = self.data.status
+        if st.paper_out and (prev is None or not prev.paper_out):
+            self._roll_paper_out()
         self.data.status = st
         self.data.status_time = dt_util.utcnow()
         self.data.reachable = True
@@ -195,6 +262,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             self.data.last_print = dt_util.utcnow()
             self.data.last_text = " / ".join(x for x in (spec.title, spec.subtitle, spec.ssid) if x) or spec.layout
             self.data.labels_printed += max(1, copies)
+            self.data.roll_used += max(1, copies)
+            self._save_roll()
             self.data.last_error = None
             self.async_set_updated_data(self.data)
 
@@ -211,3 +280,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                     await asyncio.sleep(2)
             except PrinterError as err:
                 self._raise(err)
+            # anche un'etichetta vuota esce dal rotolo
+            self.data.roll_used += 1
+            self._save_roll()
+            self.async_set_updated_data(self.data)

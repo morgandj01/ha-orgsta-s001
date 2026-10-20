@@ -21,6 +21,12 @@
       },
       "labels_printed": {
         "default": "mdi:counter"
+      },
+      "roll_used": {
+        "default": "mdi:paper-roll"
+      },
+      "roll_left": {
+        "default": "mdi:paper-roll-outline"
       }
     },
     "binary_sensor": {
@@ -47,6 +53,9 @@
         "state": {
           "on": "mdi:printer-pos"
         }
+      },
+      "roll_counted": {
+        "default": "mdi:counter"
       }
     },
     "button": {
@@ -61,6 +70,9 @@
       },
       "print_test": {
         "default": "mdi:robot-happy"
+      },
+      "roll_new": {
+        "default": "mdi:autorenew"
       }
     },
     "image": {
@@ -71,6 +83,9 @@
     "number": {
       "density": {
         "default": "mdi:contrast-box"
+      },
+      "roll_capacity": {
+        "default": "mdi:tape-measure"
       }
     },
     "select": {

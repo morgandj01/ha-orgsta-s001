@@ -16,7 +16,7 @@ from .render import LabelError, LabelSpec
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     c = entry.runtime_data
-    async_add_entities([Refresh(c), Feed(c), PrintQuick(c), PrintTest(c)])
+    async_add_entities([Refresh(c), Feed(c), PrintQuick(c), PrintTest(c), NewRoll(c)])
 
 
 class Refresh(S001Entity, ButtonEntity):
@@ -64,3 +64,13 @@ class PrintTest(S001Entity, ButtonEntity):
         await self.coordinator.async_print(
             LabelSpec(layout="icona", icon="mdi:robot-happy", title="LOCO", subtitle="stampante pronta", paper=self.coordinator.paper)
         )
+
+
+class NewRoll(S001Entity, ButtonEntity):
+    """Rotolo nuovo: il conto riparte da zero e alla fine si impara quante ne tiene."""
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "roll_new")
+
+    async def async_press(self) -> None:
+        self.coordinator.async_new_roll()

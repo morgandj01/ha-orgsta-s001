@@ -18,6 +18,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_a
             Flag(c, "paper_out", BinarySensorDeviceClass.PROBLEM, lambda st: st.paper_out),
             Printing(c),
             Powered(c),
+            RollCounted(c),
         ]
     )
 
@@ -55,3 +56,14 @@ class Powered(S001Entity, BinarySensorEntity):
     @property
     def is_on(self):
         return self.coordinator.data.powered
+
+
+class RollCounted(S001Entity, BinarySensorEntity):
+    """Acceso se il rotolo dentro è contato dalla prima etichetta (serve per imparare la capienza)."""
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "roll_counted")
+
+    @property
+    def is_on(self):
+        return self.coordinator.data.roll_counted

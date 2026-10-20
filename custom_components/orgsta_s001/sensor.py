@@ -16,7 +16,7 @@ STATES = ["pronta", "spenta", "in_stampa", "coperchio_aperto", "carta_finita", "
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     c = entry.runtime_data
-    async_add_entities([BatterySensor(c), StateSensor(c), LastPrintSensor(c), CountSensor(c)])
+    async_add_entities([BatterySensor(c), StateSensor(c), LastPrintSensor(c), CountSensor(c), RollUsedSensor(c), RollLeftSensor(c)])
 
 
 class BatterySensor(S001Entity, SensorEntity, RestoreEntity):
@@ -133,3 +133,41 @@ class CountSensor(S001Entity, SensorEntity, RestoreEntity):
     @property
     def native_value(self):
         return self._base + self.coordinator.data.labels_printed
+
+
+class RollUsedSensor(S001Entity, SensorEntity):
+    """Etichette uscite dal rotolo dentro (da quando è stato premuto «Rotolo nuovo»)."""
+
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = "etichette"
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "roll_used")
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.roll_used
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data
+        return {
+            "capienza": d.roll_capacity,
+            "rimaste": d.roll_left,
+            "contato_da_nuovo": d.roll_counted,
+            "cambiato_il": d.roll_changed.isoformat() if d.roll_changed else None,
+        }
+
+
+class RollLeftSensor(S001Entity, SensorEntity):
+    """Etichette che restano: si sa solo con la capienza imparata e il rotolo contato dall'inizio."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "etichette"
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "roll_left")
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.roll_left
