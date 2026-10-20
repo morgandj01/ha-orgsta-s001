@@ -1,0 +1,330 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "Scegli la stampante S001 trovata via Bluetooth",
+        "data": {
+          "address": "Stampante"
+        }
+      },
+      "bluetooth_confirm": {
+        "description": "Configurare la stampante {name} ({address})?"
+      }
+    },
+    "abort": {
+      "already_configured": "Stampante già configurata",
+      "no_devices_found": "Nessuna S001 trovata. Accendila e chiudi l'app Snap & Tag sul telefono"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batteria"
+      },
+      "state": {
+        "name": "Stato",
+        "state": {
+          "pronta": "Pronta",
+          "in_stampa": "In stampa",
+          "coperchio_aperto": "Coperchio aperto",
+          "carta_finita": "Carta finita",
+          "surriscaldata": "Surriscaldata",
+          "non_raggiungibile": "Non raggiungibile",
+          "sconosciuto": "Sconosciuto"
+        }
+      },
+      "last_print": {
+        "name": "Ultima stampa"
+      },
+      "labels_printed": {
+        "name": "Etichette stampate"
+      }
+    },
+    "binary_sensor": {
+      "cover_open": {
+        "name": "Coperchio"
+      },
+      "paper_out": {
+        "name": "Carta finita"
+      },
+      "printing": {
+        "name": "In stampa"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Aggiorna stato"
+      },
+      "feed": {
+        "name": "Avanza etichetta"
+      },
+      "print_quick": {
+        "name": "Stampa testo rapido"
+      },
+      "print_test": {
+        "name": "Stampa di prova"
+      }
+    },
+    "image": {
+      "preview": {
+        "name": "Anteprima etichetta"
+      }
+    },
+    "number": {
+      "density": {
+        "name": "Intensità"
+      }
+    },
+    "select": {
+      "paper": {
+        "name": "Carta caricata",
+        "state": {
+          "12x40": "12 x 40 mm",
+          "14x40": "14 x 40 mm",
+          "14x30": "14 x 30 mm",
+          "14x22": "14 x 22 mm",
+          "14x50": "14 x 50 mm",
+          "12.5x74": "12,5 x 74 mm",
+          "14x40_trasparente": "14 x 40 mm trasparente",
+          "continuo_15": "Continua 15 mm"
+        }
+      }
+    },
+    "text": {
+      "quick_text": {
+        "name": "Testo rapido"
+      }
+    }
+  },
+  "exceptions": {
+    "not_reachable": {
+      "message": "Stampante non raggiungibile: è spenta, fuori portata dei proxy o collegata al telefono"
+    },
+    "no_printer": {
+      "message": "Nessuna stampante S001 configurata"
+    },
+    "no_text": {
+      "message": "Scrivi prima il testo rapido"
+    },
+    "err_cover_open": {
+      "message": "Il coperchio è aperto"
+    },
+    "err_paper_out": {
+      "message": "Carta finita o non inserita"
+    },
+    "err_overheating": {
+      "message": "La stampante è surriscaldata, aspetta un attimo"
+    },
+    "err_connect": {
+      "message": "Connessione Bluetooth fallita: {detail}"
+    },
+    "err_write": {
+      "message": "Invio alla stampante interrotto: {detail}"
+    },
+    "err_generic": {
+      "message": "Errore stampante: {detail}"
+    }
+  },
+  "selector": {
+    "layout": {
+      "options": {
+        "testo": "Testo",
+        "icona": "Icona e testo",
+        "qr": "QR e testo",
+        "dispensa": "Dispensa (con data)",
+        "congelatore": "Congelatore",
+        "cavo": "Bandierina cavo",
+        "wifi": "Wi-Fi (QR)",
+        "data": "Data",
+        "immagine": "Immagine"
+      }
+    },
+    "paper": {
+      "options": {
+        "12x40": "12 x 40 mm",
+        "14x40": "14 x 40 mm",
+        "14x30": "14 x 30 mm",
+        "14x22": "14 x 22 mm",
+        "14x50": "14 x 50 mm",
+        "12.5x74": "12,5 x 74 mm",
+        "14x40_trasparente": "14 x 40 mm trasparente",
+        "continuo_15": "Continua 15 mm"
+      }
+    },
+    "align": {
+      "options": {
+        "center": "Centrato",
+        "left": "A sinistra"
+      }
+    }
+  },
+  "services": {
+    "print": {
+      "name": "Stampa etichetta",
+      "description": "Impagina e stampa un'etichetta",
+      "fields": {
+        "device_id": {
+          "name": "Stampante",
+          "description": "Facoltativo se ne hai una sola"
+        },
+        "layout": {
+          "name": "Impaginazione",
+          "description": "Che tipo di etichetta"
+        },
+        "title": {
+          "name": "Titolo",
+          "description": "Testo principale. Usa \\n per andare a capo"
+        },
+        "subtitle": {
+          "name": "Sottotitolo",
+          "description": "Riga più piccola sotto"
+        },
+        "icon": {
+          "name": "Icona",
+          "description": "Icona mdi, es. mdi:snowflake"
+        },
+        "qr": {
+          "name": "Contenuto QR",
+          "description": "Testo o link nel QR (layout qr)"
+        },
+        "date": {
+          "name": "Data",
+          "description": "oggi, domani, +7, 2026-10-20 o 20/10/2026"
+        },
+        "expiry": {
+          "name": "Scadenza",
+          "description": "Data di scadenza (dispensa/congelatore), anche +90"
+        },
+        "date_prefix": {
+          "name": "Prefisso data",
+          "description": "Es. Aperto, Fatto il"
+        },
+        "ssid": {
+          "name": "Nome Wi-Fi",
+          "description": "Layout wifi"
+        },
+        "password": {
+          "name": "Password Wi-Fi",
+          "description": "Layout wifi, vuota per rete aperta"
+        },
+        "image": {
+          "name": "Immagine",
+          "description": "URL, /local/..., percorso consentito, camera.x o image.x"
+        },
+        "border": {
+          "name": "Bordo",
+          "description": "Cornice arrotondata"
+        },
+        "invert": {
+          "name": "Inverti",
+          "description": "Bianco su nero"
+        },
+        "align": {
+          "name": "Allineamento",
+          "description": ""
+        },
+        "paper": {
+          "name": "Carta",
+          "description": "Se vuoto usa quella impostata sulla stampante"
+        },
+        "length_mm": {
+          "name": "Lunghezza (mm)",
+          "description": "Solo carta continua"
+        },
+        "copies": {
+          "name": "Copie",
+          "description": ""
+        },
+        "density": {
+          "name": "Intensità",
+          "description": "1-15, più alto = più nero"
+        }
+      }
+    },
+    "preview": {
+      "name": "Anteprima etichetta",
+      "description": "Crea l'anteprima senza stampare",
+      "fields": {
+        "device_id": {
+          "name": "Stampante",
+          "description": "Facoltativo se ne hai una sola"
+        },
+        "layout": {
+          "name": "Impaginazione",
+          "description": "Che tipo di etichetta"
+        },
+        "title": {
+          "name": "Titolo",
+          "description": "Testo principale. Usa \\n per andare a capo"
+        },
+        "subtitle": {
+          "name": "Sottotitolo",
+          "description": "Riga più piccola sotto"
+        },
+        "icon": {
+          "name": "Icona",
+          "description": "Icona mdi, es. mdi:snowflake"
+        },
+        "qr": {
+          "name": "Contenuto QR",
+          "description": "Testo o link nel QR (layout qr)"
+        },
+        "date": {
+          "name": "Data",
+          "description": "oggi, domani, +7, 2026-10-20 o 20/10/2026"
+        },
+        "expiry": {
+          "name": "Scadenza",
+          "description": "Data di scadenza (dispensa/congelatore), anche +90"
+        },
+        "date_prefix": {
+          "name": "Prefisso data",
+          "description": "Es. Aperto, Fatto il"
+        },
+        "ssid": {
+          "name": "Nome Wi-Fi",
+          "description": "Layout wifi"
+        },
+        "password": {
+          "name": "Password Wi-Fi",
+          "description": "Layout wifi, vuota per rete aperta"
+        },
+        "image": {
+          "name": "Immagine",
+          "description": "URL, /local/..., percorso consentito, camera.x o image.x"
+        },
+        "border": {
+          "name": "Bordo",
+          "description": "Cornice arrotondata"
+        },
+        "invert": {
+          "name": "Inverti",
+          "description": "Bianco su nero"
+        },
+        "align": {
+          "name": "Allineamento",
+          "description": ""
+        },
+        "paper": {
+          "name": "Carta",
+          "description": "Se vuoto usa quella impostata sulla stampante"
+        },
+        "length_mm": {
+          "name": "Lunghezza (mm)",
+          "description": "Solo carta continua"
+        }
+      }
+    },
+    "feed": {
+      "name": "Avanza etichetta",
+      "description": "Fa uscire un'etichetta vuota",
+      "fields": {
+        "device_id": {
+          "name": "Stampante",
+          "description": "Facoltativo se ne hai una sola"
+        }
+      }
+    }
+  }
+}

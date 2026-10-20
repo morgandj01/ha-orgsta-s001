@@ -1,0 +1,330 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "Pick the S001 printer found over Bluetooth",
+        "data": {
+          "address": "Printer"
+        }
+      },
+      "bluetooth_confirm": {
+        "description": "Set up printer {name} ({address})?"
+      }
+    },
+    "abort": {
+      "already_configured": "Printer already configured",
+      "no_devices_found": "No S001 found. Turn it on and close the Snap & Tag app"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "state": {
+        "name": "Status",
+        "state": {
+          "pronta": "Ready",
+          "in_stampa": "Printing",
+          "coperchio_aperto": "Cover open",
+          "carta_finita": "Out of paper",
+          "surriscaldata": "Overheated",
+          "non_raggiungibile": "Not reachable",
+          "sconosciuto": "Unknown"
+        }
+      },
+      "last_print": {
+        "name": "Last print"
+      },
+      "labels_printed": {
+        "name": "Labels printed"
+      }
+    },
+    "binary_sensor": {
+      "cover_open": {
+        "name": "Cover"
+      },
+      "paper_out": {
+        "name": "Out of paper"
+      },
+      "printing": {
+        "name": "Printing"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Refresh status"
+      },
+      "feed": {
+        "name": "Feed label"
+      },
+      "print_quick": {
+        "name": "Print quick text"
+      },
+      "print_test": {
+        "name": "Test print"
+      }
+    },
+    "image": {
+      "preview": {
+        "name": "Label preview"
+      }
+    },
+    "number": {
+      "density": {
+        "name": "Density"
+      }
+    },
+    "select": {
+      "paper": {
+        "name": "Loaded paper",
+        "state": {
+          "12x40": "12 x 40 mm",
+          "14x40": "14 x 40 mm",
+          "14x30": "14 x 30 mm",
+          "14x22": "14 x 22 mm",
+          "14x50": "14 x 50 mm",
+          "12.5x74": "12,5 x 74 mm",
+          "14x40_trasparente": "14 x 40 mm transparent",
+          "continuo_15": "Continuous 15 mm"
+        }
+      }
+    },
+    "text": {
+      "quick_text": {
+        "name": "Quick text"
+      }
+    }
+  },
+  "exceptions": {
+    "not_reachable": {
+      "message": "Printer not reachable: off, out of proxy range or connected to the phone"
+    },
+    "no_printer": {
+      "message": "No S001 printer configured"
+    },
+    "no_text": {
+      "message": "Set the quick text first"
+    },
+    "err_cover_open": {
+      "message": "The cover is open"
+    },
+    "err_paper_out": {
+      "message": "Out of paper"
+    },
+    "err_overheating": {
+      "message": "Printer overheated, wait a moment"
+    },
+    "err_connect": {
+      "message": "Bluetooth connection failed: {detail}"
+    },
+    "err_write": {
+      "message": "Sending to printer failed: {detail}"
+    },
+    "err_generic": {
+      "message": "Printer error: {detail}"
+    }
+  },
+  "selector": {
+    "layout": {
+      "options": {
+        "testo": "Text",
+        "icona": "Icon and text",
+        "qr": "QR and text",
+        "dispensa": "Pantry (with date)",
+        "congelatore": "Freezer",
+        "cavo": "Cable flag",
+        "wifi": "Wi-Fi (QR)",
+        "data": "Date",
+        "immagine": "Image"
+      }
+    },
+    "paper": {
+      "options": {
+        "12x40": "12 x 40 mm",
+        "14x40": "14 x 40 mm",
+        "14x30": "14 x 30 mm",
+        "14x22": "14 x 22 mm",
+        "14x50": "14 x 50 mm",
+        "12.5x74": "12,5 x 74 mm",
+        "14x40_trasparente": "14 x 40 mm transparent",
+        "continuo_15": "Continuous 15 mm"
+      }
+    },
+    "align": {
+      "options": {
+        "center": "Centered",
+        "left": "Left"
+      }
+    }
+  },
+  "services": {
+    "print": {
+      "name": "Print label",
+      "description": "Lay out and print a label",
+      "fields": {
+        "device_id": {
+          "name": "Printer",
+          "description": "Optional when you have only one"
+        },
+        "layout": {
+          "name": "Layout",
+          "description": "Kind of label"
+        },
+        "title": {
+          "name": "Title",
+          "description": "Main text. Use \\n for a new line"
+        },
+        "subtitle": {
+          "name": "Subtitle",
+          "description": "Smaller line below"
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "mdi icon, e.g. mdi:snowflake"
+        },
+        "qr": {
+          "name": "QR content",
+          "description": "Text or link in the QR (qr layout)"
+        },
+        "date": {
+          "name": "Date",
+          "description": "today, tomorrow, +7, 2026-10-20 or 20/10/2026"
+        },
+        "expiry": {
+          "name": "Expiry",
+          "description": "Expiry date (pantry/freezer), also +90"
+        },
+        "date_prefix": {
+          "name": "Date prefix",
+          "description": "E.g. Opened, Made on"
+        },
+        "ssid": {
+          "name": "Wi-Fi name",
+          "description": "wifi layout"
+        },
+        "password": {
+          "name": "Wi-Fi password",
+          "description": "wifi layout, empty for open network"
+        },
+        "image": {
+          "name": "Image",
+          "description": "URL, /local/..., allowed path, camera.x or image.x"
+        },
+        "border": {
+          "name": "Border",
+          "description": "Rounded frame"
+        },
+        "invert": {
+          "name": "Invert",
+          "description": "White on black"
+        },
+        "align": {
+          "name": "Alignment",
+          "description": ""
+        },
+        "paper": {
+          "name": "Paper",
+          "description": "Empty = the one set on the printer"
+        },
+        "length_mm": {
+          "name": "Length (mm)",
+          "description": "Continuous paper only"
+        },
+        "copies": {
+          "name": "Copies",
+          "description": ""
+        },
+        "density": {
+          "name": "Density",
+          "description": "1-15, higher = darker"
+        }
+      }
+    },
+    "preview": {
+      "name": "Preview label",
+      "description": "Render the preview without printing",
+      "fields": {
+        "device_id": {
+          "name": "Printer",
+          "description": "Optional when you have only one"
+        },
+        "layout": {
+          "name": "Layout",
+          "description": "Kind of label"
+        },
+        "title": {
+          "name": "Title",
+          "description": "Main text. Use \\n for a new line"
+        },
+        "subtitle": {
+          "name": "Subtitle",
+          "description": "Smaller line below"
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "mdi icon, e.g. mdi:snowflake"
+        },
+        "qr": {
+          "name": "QR content",
+          "description": "Text or link in the QR (qr layout)"
+        },
+        "date": {
+          "name": "Date",
+          "description": "today, tomorrow, +7, 2026-10-20 or 20/10/2026"
+        },
+        "expiry": {
+          "name": "Expiry",
+          "description": "Expiry date (pantry/freezer), also +90"
+        },
+        "date_prefix": {
+          "name": "Date prefix",
+          "description": "E.g. Opened, Made on"
+        },
+        "ssid": {
+          "name": "Wi-Fi name",
+          "description": "wifi layout"
+        },
+        "password": {
+          "name": "Wi-Fi password",
+          "description": "wifi layout, empty for open network"
+        },
+        "image": {
+          "name": "Image",
+          "description": "URL, /local/..., allowed path, camera.x or image.x"
+        },
+        "border": {
+          "name": "Border",
+          "description": "Rounded frame"
+        },
+        "invert": {
+          "name": "Invert",
+          "description": "White on black"
+        },
+        "align": {
+          "name": "Alignment",
+          "description": ""
+        },
+        "paper": {
+          "name": "Paper",
+          "description": "Empty = the one set on the printer"
+        },
+        "length_mm": {
+          "name": "Length (mm)",
+          "description": "Continuous paper only"
+        }
+      }
+    },
+    "feed": {
+      "name": "Feed label",
+      "description": "Feed one blank label",
+      "fields": {
+        "device_id": {
+          "name": "Printer",
+          "description": "Optional when you have only one"
+        }
+      }
+    }
+  }
+}

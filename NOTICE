@@ -1,0 +1,14 @@
+ha-orgsta-s001
+Copyright 2026 Morgan (morgandj01)
+
+This project contains code derived from TiMini Print
+(https://github.com/Dejniel/TiMini-Print), Copyright Dejniel,
+licensed under the Apache License, Version 2.0: the S001 frame format,
+command numbers, media recipes and status layout ("yk_astra_p1" family,
+"s001" variant). The code was rewritten for Home Assistant.
+
+Bundled assets:
+- Material Design Icons webfont (Pictogrammers), Apache License 2.0 / SIL OFL,
+  see custom_components/orgsta_s001/assets/LICENSE-mdi.txt
+- Roboto Condensed (Google Fonts), SIL Open Font License 1.1,
+  static Bold/Regular instances, see assets/LICENSE-roboto-condensed-OFL.txt

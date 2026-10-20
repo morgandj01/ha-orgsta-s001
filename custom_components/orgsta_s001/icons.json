@@ -1,0 +1,91 @@
+{
+  "entity": {
+    "sensor": {
+      "battery": {
+        "default": "mdi:battery"
+      },
+      "state": {
+        "default": "mdi:printer-pos",
+        "state": {
+          "in_stampa": "mdi:printer-pos-sync",
+          "coperchio_aperto": "mdi:printer-pos-alert",
+          "carta_finita": "mdi:printer-pos-alert",
+          "surriscaldata": "mdi:thermometer-alert",
+          "non_raggiungibile": "mdi:printer-pos-off",
+          "sconosciuto": "mdi:printer-pos-outline"
+        }
+      },
+      "last_print": {
+        "default": "mdi:label-outline"
+      },
+      "labels_printed": {
+        "default": "mdi:counter"
+      }
+    },
+    "binary_sensor": {
+      "cover_open": {
+        "default": "mdi:printer-pos",
+        "state": {
+          "on": "mdi:printer-pos-alert"
+        }
+      },
+      "paper_out": {
+        "default": "mdi:paper-roll",
+        "state": {
+          "on": "mdi:paper-roll-outline"
+        }
+      },
+      "printing": {
+        "default": "mdi:printer-pos",
+        "state": {
+          "on": "mdi:printer-pos-sync"
+        }
+      }
+    },
+    "button": {
+      "refresh": {
+        "default": "mdi:refresh"
+      },
+      "feed": {
+        "default": "mdi:arrow-down-bold-box"
+      },
+      "print_quick": {
+        "default": "mdi:printer-pos"
+      },
+      "print_test": {
+        "default": "mdi:robot-happy"
+      }
+    },
+    "image": {
+      "preview": {
+        "default": "mdi:printer-eye"
+      }
+    },
+    "number": {
+      "density": {
+        "default": "mdi:contrast-box"
+      }
+    },
+    "select": {
+      "paper": {
+        "default": "mdi:paper-roll"
+      }
+    },
+    "text": {
+      "quick_text": {
+        "default": "mdi:text-box-edit"
+      }
+    }
+  },
+  "services": {
+    "print": {
+      "service": "mdi:printer-pos"
+    },
+    "preview": {
+      "service": "mdi:printer-eye"
+    },
+    "feed": {
+      "service": "mdi:arrow-down-bold-box"
+    }
+  }
+}

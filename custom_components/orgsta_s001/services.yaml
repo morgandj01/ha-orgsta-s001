@@ -1,0 +1,128 @@
+print:
+  fields:
+    device_id: &id001
+      selector:
+        device:
+          integration: orgsta_s001
+    layout: &id002
+      default: testo
+      selector:
+        select:
+          options:
+          - testo
+          - icona
+          - qr
+          - dispensa
+          - congelatore
+          - cavo
+          - wifi
+          - data
+          - immagine
+          translation_key: layout
+    title: &id003
+      example: Caffè
+      selector:
+        text:
+          multiline: true
+    subtitle: &id004
+      example: Cassetto 3
+      selector:
+        text: {}
+    icon: &id005
+      example: mdi:coffee
+      selector:
+        icon: {}
+    qr: &id006
+      example: https://example.com
+      selector:
+        text: {}
+    date: &id007
+      example: oggi
+      selector:
+        text: {}
+    expiry: &id008
+      example: '+90'
+      selector:
+        text: {}
+    date_prefix: &id009
+      example: Aperto
+      selector:
+        text: {}
+    ssid: &id010
+      selector:
+        text: {}
+    password: &id011
+      selector:
+        text: {}
+    image: &id012
+      example: /local/logo.png
+      selector:
+        text: {}
+    border: &id013
+      default: false
+      selector:
+        boolean: {}
+    invert: &id014
+      default: false
+      selector:
+        boolean: {}
+    align: &id015
+      default: center
+      selector:
+        select:
+          options:
+          - center
+          - left
+          translation_key: align
+    paper: &id016
+      selector:
+        select:
+          options:
+          - 12x40
+          - 14x40
+          - 14x30
+          - 14x22
+          - 14x50
+          - 12.5x74
+          - 14x40_trasparente
+          - continuo_15
+          translation_key: paper
+    length_mm: &id017
+      selector:
+        number:
+          min: 8
+          max: 200
+          unit_of_measurement: mm
+    copies:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 20
+    density:
+      selector:
+        number:
+          min: 1
+          max: 15
+preview:
+  fields:
+    device_id: *id001
+    layout: *id002
+    title: *id003
+    subtitle: *id004
+    icon: *id005
+    qr: *id006
+    date: *id007
+    expiry: *id008
+    date_prefix: *id009
+    ssid: *id010
+    password: *id011
+    image: *id012
+    border: *id013
+    invert: *id014
+    align: *id015
+    paper: *id016
+    length_mm: *id017
+feed:
+  fields:
+    device_id: *id001
