@@ -34,6 +34,8 @@ class PrinterState:
     preview: bytes | None = None
     preview_time: datetime | None = None
     reachable: bool | None = None
+    powered: bool | None = None
+    seen_time: datetime | None = None
     extra: dict = field(default_factory=dict)
 
 
@@ -53,6 +55,65 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.paper: str = DEFAULT_PAPER
         self.quick_text: str = ""
         self.data = PrinterState()
+        self._auto_task: asyncio.Task | None = None
+
+    # ---- accesa/spenta dagli annunci Bluetooth (i proxy li sentono già, nessuna connessione) ----
+    @callback
+    def async_start(self) -> None:
+        entry = self.config_entry
+        entry.async_on_unload(
+            bluetooth.async_register_callback(
+                self.hass,
+                self._on_advert,
+                bluetooth.BluetoothCallbackMatcher(address=self.address, connectable=False),
+                bluetooth.BluetoothScanningMode.PASSIVE,
+            )
+        )
+        entry.async_on_unload(
+            bluetooth.async_track_unavailable(self.hass, self._on_gone, self.address, connectable=False)
+        )
+        if bluetooth.async_address_present(self.hass, self.address, connectable=False):
+            self.data.powered = True
+            self.data.seen_time = dt_util.utcnow()
+
+    @callback
+    def _on_advert(self, info, change) -> None:
+        was = self.data.powered
+        self.data.powered = True
+        self.data.seen_time = dt_util.utcnow()
+        if was is not True:
+            _LOGGER.debug("S001 %s accesa", self.address)
+            self.async_set_updated_data(self.data)
+            self._schedule_auto_refresh()
+
+    @callback
+    def _on_gone(self, info) -> None:
+        if self.data.busy:
+            return
+        self.data.powered = False
+        _LOGGER.debug("S001 %s spenta", self.address)
+        self.async_set_updated_data(self.data)
+
+    @callback
+    def _schedule_auto_refresh(self) -> None:
+        if self._auto_task and not self._auto_task.done():
+            return
+        self._auto_task = self.config_entry.async_create_background_task(
+            self.hass, self._auto_refresh(), f"{DOMAIN}_auto_refresh"
+        )
+
+    async def _auto_refresh(self) -> None:
+        """Una lettura sola dopo l'accensione: batteria, coperchio, carta."""
+        await asyncio.sleep(4)
+        if self._lock.locked():
+            return
+        for tentativo in range(2):
+            try:
+                await self.async_refresh_status()
+                return
+            except HomeAssistantError as err:
+                _LOGGER.debug("lettura all'accensione non riuscita (%s): %s", tentativo + 1, err)
+                await asyncio.sleep(20)
 
     async def _async_update_data(self) -> PrinterState:
         """Manual refresh ("Aggiorna stato"): connect, read status, disconnect."""

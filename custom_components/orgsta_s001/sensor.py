@@ -11,7 +11,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .coordinator import S001ConfigEntry
 from .entity import S001Entity
 
-STATES = ["pronta", "in_stampa", "coperchio_aperto", "carta_finita", "surriscaldata", "non_raggiungibile", "sconosciuto"]
+STATES = ["pronta", "spenta", "in_stampa", "coperchio_aperto", "carta_finita", "surriscaldata", "non_raggiungibile", "sconosciuto"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
@@ -58,6 +58,8 @@ class StateSensor(S001Entity, SensorEntity):
         if d.busy:
             return "in_stampa"
         st = d.status
+        if d.powered is False:
+            return "spenta"
         if d.reachable is False:
             return "non_raggiungibile"
         if st is None:
@@ -78,6 +80,7 @@ class StateSensor(S001Entity, SensorEntity):
         st = d.status
         return {
             "ultimo_contatto": d.status_time.isoformat() if d.status_time else None,
+            "ultimo_annuncio": d.seen_time.isoformat() if d.seen_time else None,
             "ultimo_errore": d.last_error,
             "intensita_stampante": st.density if st else None,
             "bit_stato": f"0x{st.bits:04x}" if st else None,

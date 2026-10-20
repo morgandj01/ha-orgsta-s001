@@ -31,7 +31,8 @@
           "carta_finita": "Carta finita",
           "surriscaldata": "Surriscaldata",
           "non_raggiungibile": "Non raggiungibile",
-          "sconosciuto": "Sconosciuto"
+          "sconosciuto": "Sconosciuto",
+          "spenta": "Spenta"
         }
       },
       "last_print": {
@@ -50,6 +51,9 @@
       },
       "printing": {
         "name": "In stampa"
+      },
+      "powered": {
+        "name": "Accesa"
       }
     },
     "button": {

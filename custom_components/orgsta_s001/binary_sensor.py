@@ -17,6 +17,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_a
             Flag(c, "cover_open", BinarySensorDeviceClass.OPENING, lambda st: st.cover_open),
             Flag(c, "paper_out", BinarySensorDeviceClass.PROBLEM, lambda st: st.paper_out),
             Printing(c),
+            Powered(c),
         ]
     )
 
@@ -43,3 +44,14 @@ class Printing(S001Entity, BinarySensorEntity):
     def is_on(self):
         d = self.coordinator.data
         return bool(d.busy or (d.status and d.status.printing))
+
+
+class Powered(S001Entity, BinarySensorEntity):
+    _attr_device_class = BinarySensorDeviceClass.POWER
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "powered")
+
+    @property
+    def is_on(self):
+        return self.coordinator.data.powered

@@ -31,7 +31,8 @@
           "carta_finita": "Out of paper",
           "surriscaldata": "Overheated",
           "non_raggiungibile": "Not reachable",
-          "sconosciuto": "Unknown"
+          "sconosciuto": "Unknown",
+          "spenta": "Off"
         }
       },
       "last_print": {
@@ -50,6 +51,9 @@
       },
       "printing": {
         "name": "Printing"
+      },
+      "powered": {
+        "name": "Powered"
       }
     },
     "button": {

@@ -205,6 +205,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry) -> bool
     coord = S001Coordinator(hass, entry, entry.data[CONF_ADDRESS])
     entry.runtime_data = coord
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    coord.async_start()
     return True
 
 

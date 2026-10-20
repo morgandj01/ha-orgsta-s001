@@ -12,7 +12,8 @@
           "carta_finita": "mdi:printer-pos-alert",
           "surriscaldata": "mdi:thermometer-alert",
           "non_raggiungibile": "mdi:printer-pos-off",
-          "sconosciuto": "mdi:printer-pos-outline"
+          "sconosciuto": "mdi:printer-pos-outline",
+          "spenta": "mdi:printer-pos-off-outline"
         }
       },
       "last_print": {
@@ -39,6 +40,12 @@
         "default": "mdi:printer-pos",
         "state": {
           "on": "mdi:printer-pos-sync"
+        }
+      },
+      "powered": {
+        "default": "mdi:printer-pos-off",
+        "state": {
+          "on": "mdi:printer-pos"
         }
       }
     },

@@ -16,7 +16,8 @@ Serve almeno un adattatore Bluetooth o un proxy ESPHome con **connessioni attive
 
 ## Come funziona
 
-- La stampante viene contattata **solo quando stampi** o premi *Aggiorna stato*: si collega, stampa, si scollega. Così non occupa uno slot del proxy e il telefono può ancora usarla
+- Quando la accendi HA se ne accorge dagli annunci Bluetooth e fa **una lettura sola** (batteria, coperchio, carta). Per il resto la stampante viene contattata solo quando stampi o premi *Aggiorna stato*: si collega, fa, si scollega. Così non occupa uno slot del proxy e il telefono può ancora usarla
+- Se la tieni collegata al telefono (Snap & Tag) smette di farsi sentire e dopo qualche minuto HA la vede *spenta*
 - Prima di stampare legge lo stato: se il coperchio è aperto o la carta è finita, si ferma e te lo dice
 - Le etichette sono disegnate in orizzontale (il testo corre lungo l'etichetta)
 
@@ -24,7 +25,8 @@ Serve almeno un adattatore Bluetooth o un proxy ESPHome con **connessioni attive
 
 | Entità | Cosa fa |
 |---|---|
-| Stato | pronta, in stampa, coperchio aperto, carta finita, non raggiungibile |
+| Stato | pronta, spenta, in stampa, coperchio aperto, carta finita, non raggiungibile |
+| Accesa | si accende da sola quando la stampante si accende: HA ascolta gli annunci Bluetooth che i proxy sentono già, senza collegarsi |
 | Batteria | % letta all'ultima connessione |
 | Coperchio, Carta finita, In stampa | sensori binari |
 | Ultima stampa | quando e cosa (attributo `contenuto`) |
