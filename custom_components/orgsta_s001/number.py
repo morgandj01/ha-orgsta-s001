@@ -13,7 +13,7 @@ from .entity import S001Entity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
-    async_add_entities([Density(entry.runtime_data), RollCapacity(entry.runtime_data)])
+    async_add_entities([Density(entry.runtime_data), RollCapacity(entry.runtime_data), PrintOffset(entry.runtime_data)])
 
 
 class Density(S001Entity, RestoreNumber):
@@ -59,3 +59,30 @@ class RollCapacity(S001Entity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.async_set_roll_capacity(int(value))
+
+
+class PrintOffset(S001Entity, RestoreNumber):
+    """Sposta la stampa lungo l'etichetta per centrarla (8 punti = 1 mm; positivo = verso l'inizio del testo)."""
+
+    _attr_native_min_value = -24
+    _attr_native_max_value = 40
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+    _attr_native_unit_of_measurement = "punti"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "print_offset")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_number_data()) and last.native_value is not None:
+            self.coordinator.offset = int(last.native_value)
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.offset
+
+    async def async_set_native_value(self, value: float) -> None:
+        self.coordinator.offset = int(value)
+        self.async_write_ha_state()

@@ -39,6 +39,7 @@ Serve almeno un adattatore Bluetooth o un proxy ESPHome con **connessioni attive
 | Anteprima etichetta | immagine dell'ultima etichetta stampata o in anteprima |
 | Carta caricata | il rotolo dentro (default 12 x 40 mm) |
 | Intensità | 1-15, default 9 |
+| Spostamento stampa | punti (8 = 1 mm) per centrare la stampa lungo l'etichetta; 0 = centrata sulla 12x40 (0.3.1) |
 | Testo rapido + Stampa testo rapido | scrivi e stampa dalla dashboard. Usa `|` per la seconda riga: `Caffè|Moka` |
 | Aggiorna stato, Avanza etichetta, Stampa di prova | pulsanti |
 

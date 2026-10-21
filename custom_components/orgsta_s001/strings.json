@@ -93,6 +93,9 @@
       },
       "roll_capacity": {
         "name": "Labels per roll"
+      },
+      "print_offset": {
+        "name": "Print offset"
       }
     },
     "select": {

@@ -86,6 +86,9 @@
       },
       "roll_capacity": {
         "default": "mdi:tape-measure"
+      },
+      "print_offset": {
+        "default": "mdi:arrow-left-right"
       }
     },
     "select": {

@@ -25,6 +25,10 @@ RASTER_LEFT_PADDING = 6
 ROWS_PER_SLICE = 4
 DEFAULT_SPEED = 25
 DEFAULT_DENSITY = 9
+# carta a etichette: quanto avanza dopo il buco prima di stampare. Era 2 e l'etichetta 12x40 (280 righe su circa 320)
+# usciva tutta verso un lato; 24 la centra (misurata su «Semi di lino», 21 ottobre 2026). Si ritocca con
+# «Spostamento stampa» (8 punti = 1 mm)
+TAG_START = 24
 
 
 class Cmd(IntEnum):
@@ -186,6 +190,7 @@ class JobBuilder:
     paper_mode: str = PaperMode.TAG
     density: int = DEFAULT_DENSITY
     speed: int = DEFAULT_SPEED
+    start: int = TAG_START
     seq: _Seq = field(default_factory=_Seq)
 
     def status_query(self) -> bytes:
@@ -227,8 +232,8 @@ class JobBuilder:
                 frames.append(self._special(2, 800))
             else:
                 frames.append(self._back(12))
-        if tag:
-            frames.append(self._fwd(2))
+        if tag and self.start > 0:
+            frames.append(self._fwd(min(120, int(self.start))))
         step = ROW_BYTES * ROWS_PER_SLICE
         for off in range(0, len(raster_rows), step):
             frames.append(self._f(Cmd.RASTER, raster_rows[off : off + step]))

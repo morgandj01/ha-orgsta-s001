@@ -17,7 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_DENSITY, DOMAIN
 from .printer import PrinterError, S001Session, check_ready
-from .protocol import JobBuilder, Status, pack_rows
+from .protocol import TAG_START, JobBuilder, Status, pack_rows
 from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, to_raster
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,6 +67,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.address = address
         self._lock = asyncio.Lock()
         self.density: int = DEFAULT_DENSITY
+        self.offset: int = 0                      # «Spostamento stampa», in punti (8 = 1 mm), sulla carta a etichette
         self.paper: str = DEFAULT_PAPER
         self.quick_text: str = ""
         self.data = PrinterState()
@@ -244,7 +245,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.data.preview_time = dt_util.utcnow()
         async with self._lock:
             dev = self._ble_device()
-            builder = JobBuilder(paper_mode=paper.mode, density=int(density or self.density))
+            builder = JobBuilder(paper_mode=paper.mode, density=int(density or self.density),
+                                 start=max(0, TAG_START + int(self.offset)))
             self.data.busy = True
             self.async_set_updated_data(self.data)
             try:

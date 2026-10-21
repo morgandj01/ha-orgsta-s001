@@ -93,6 +93,9 @@
       },
       "roll_capacity": {
         "name": "Etichette in un rotolo"
+      },
+      "print_offset": {
+        "name": "Spostamento stampa"
       }
     },
     "select": {
