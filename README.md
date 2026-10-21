@@ -26,6 +26,7 @@ Serve almeno un adattatore Bluetooth o un proxy ESPHome con **connessioni attive
 | Entità | Cosa fa |
 |---|---|
 | Stato | pronta, spenta, in stampa, coperchio aperto, carta finita, non raggiungibile |
+| Stanza | dove sta: l'area del proxy Bluetooth che la sente meglio (si aggiorna da accesa); attributi `proxy`, `rssi` |
 | Accesa | si accende da sola quando la stampante si accende: HA ascolta gli annunci Bluetooth che i proxy sentono già, senza collegarsi |
 | Batteria | % letta all'ultima connessione |
 | Coperchio, Carta finita, In stampa | sensori binari |

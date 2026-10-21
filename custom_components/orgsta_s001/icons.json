@@ -27,6 +27,9 @@
       },
       "roll_left": {
         "default": "mdi:paper-roll-outline"
+      },
+      "area": {
+        "default": "mdi:map-marker-radius"
       }
     },
     "binary_sensor": {

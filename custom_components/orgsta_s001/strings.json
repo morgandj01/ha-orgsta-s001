@@ -46,6 +46,9 @@
       },
       "roll_left": {
         "name": "Labels left"
+      },
+      "area": {
+        "name": "Room"
       }
     },
     "binary_sensor": {

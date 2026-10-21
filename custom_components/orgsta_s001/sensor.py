@@ -16,7 +16,7 @@ STATES = ["pronta", "spenta", "in_stampa", "coperchio_aperto", "carta_finita", "
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     c = entry.runtime_data
-    async_add_entities([BatterySensor(c), StateSensor(c), LastPrintSensor(c), CountSensor(c), RollUsedSensor(c), RollLeftSensor(c)])
+    async_add_entities([BatterySensor(c), StateSensor(c), LastPrintSensor(c), CountSensor(c), RollUsedSensor(c), RollLeftSensor(c), AreaSensor(c)])
 
 
 class BatterySensor(S001Entity, SensorEntity, RestoreEntity):
@@ -171,3 +171,25 @@ class RollLeftSensor(S001Entity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.roll_left
+
+
+class AreaSensor(S001Entity, SensorEntity, RestoreEntity):
+    """La stanza dove sta: l'area del proxy Bluetooth che la sente meglio (solo da accesa)."""
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "area")
+        self._restored = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) and last.state not in ("unknown", "unavailable"):
+            self._restored = last.state
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.area or self._restored
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data
+        return {"area_id": d.area_id, "proxy": d.proxy, "proxy_mac": d.proxy_address, "rssi": d.rssi}

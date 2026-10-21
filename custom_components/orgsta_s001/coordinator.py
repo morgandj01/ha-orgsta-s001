@@ -11,6 +11,7 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar, device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -37,6 +38,12 @@ class PrinterState:
     reachable: bool | None = None
     powered: bool | None = None
     seen_time: datetime | None = None
+    # dove sta: il proxy Bluetooth che la sente meglio e la sua area (la stampantina è tascabile, si sposta)
+    proxy: str | None = None
+    proxy_address: str | None = None
+    area: str | None = None
+    area_id: str | None = None
+    rssi: int | None = None
     extra: dict = field(default_factory=dict)
     roll_used: int = 0
     roll_capacity: int | None = None
@@ -140,16 +147,53 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         if bluetooth.async_address_present(self.hass, self.address, connectable=False):
             self.data.powered = True
             self.data.seen_time = dt_util.utcnow()
+            if info := bluetooth.async_last_service_info(self.hass, self.address, connectable=False):
+                self.data.rssi = info.rssi
+                self._locate(info.source)
 
     @callback
     def _on_advert(self, info, change) -> None:
         was = self.data.powered
         self.data.powered = True
         self.data.seen_time = dt_util.utcnow()
+        self.data.rssi = getattr(info, "rssi", None)
+        moved = self._locate(getattr(info, "source", None))
+        if moved and was is True:
+            self.async_set_updated_data(self.data)
         if was is not True:
             _LOGGER.debug("S001 %s accesa", self.address)
             self.async_set_updated_data(self.data)
             self._schedule_auto_refresh()
+
+    @callback
+    def _locate(self, source: str | None) -> bool:
+        """Proxy e area dal proxy che la sente meglio (l'area del dispositivo del proxy). True se è cambiato."""
+        if not source or source == self.data.proxy_address:
+            return False
+        name, area_id = source, None
+        scanner = bluetooth.async_scanner_by_source(self.hass, source)
+        if scanner is not None and getattr(scanner, "name", None):
+            name = scanner.name
+        devreg = dr.async_get(self.hass)
+        dev = None
+        for kind in (dr.CONNECTION_BLUETOOTH, dr.CONNECTION_NETWORK_MAC):
+            dev = devreg.async_get_device(connections={(kind, source.lower())}) or devreg.async_get_device(
+                connections={(kind, source.upper())}
+            )
+            if dev:
+                break
+        if dev is not None:
+            name = dev.name_by_user or dev.name or name
+            area_id = dev.area_id
+        area = None
+        if area_id and (a := ar.async_get(self.hass).async_get_area(area_id)):
+            area = a.name
+        d = self.data
+        changed = (name, area_id) != (d.proxy, d.area_id)
+        d.proxy_address, d.proxy, d.area_id, d.area = source, name, area_id, area
+        if changed:
+            _LOGGER.debug("S001 %s vicina a %s (%s)", self.address, name, area)
+        return changed
 
     @callback
     def _on_gone(self, info) -> None:
