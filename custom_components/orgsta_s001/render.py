@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 ASSETS = Path(__file__).parent / "assets"
 FONT_BOLD = ASSETS / "RobotoCondensed-Bold.ttf"
@@ -262,7 +262,7 @@ class Canvas:
         bw, bh = x1 - x0, y1 - y0
         if src.width > src.height and bh > bw or src.height > src.width and bw > bh:
             pass
-        src = ImageOps.contain(src, (bw, bh), Image.Resampling.LANCZOS)
+        src = ImageOps.contain(src, (bw, bh), Image.Resampling.BICUBIC)
         src = ImageOps.autocontrast(src)
         dith = src.convert("1")  # Floyd-Steinberg
         dith = dith.convert("L").resize((dith.width * SS, dith.height * SS), Image.Resampling.NEAREST)
@@ -285,7 +285,7 @@ class Canvas:
         )
 
     def finish(self, invert: bool = False) -> Image.Image:
-        small = self.img.resize((self.w, self.h), Image.Resampling.LANCZOS)
+        small = self.img.resize((self.w, self.h), Image.Resampling.BICUBIC)
         bw = small.point(lambda v: 0 if v < 150 else 255, mode="L")
         if invert:
             bw = ImageOps.invert(bw)
@@ -433,18 +433,26 @@ def to_raster(landscape: Image.Image) -> Image.Image:
     return landscape.transpose(Image.Transpose.ROTATE_90)
 
 
-def preview_png(landscape: Image.Image, scale: int = 3) -> bytes:
-    """Nice looking preview: white label with grey outline, ink in near-black."""
+def preview_png(landscape: Image.Image, scale: int = 4) -> bytes:
+    """Anteprima com'è sulla carta: i punti della testina (8/mm) fusi come li fonde il calore, non a quadratini.
+
+    Ingrandisce l'immagine a 1 bit con un filtro morbido, la sfuma appena e ripassa una soglia dolce: i bordi
+    diventano curve lisce e un punto da solo resta un puntino tondo. Si vede solo, la stampa resta quella.
+    """
     w, h = landscape.size
-    pad = 6
-    big = landscape.resize((w * scale, h * scale), Image.Resampling.NEAREST)
-    ink = big.point(lambda v: 30 if v < 128 else 255, mode="L")
+    pad = 2 * scale
+    big = landscape.convert("L").resize((w * scale, h * scale), Image.Resampling.BICUBIC)
+    big = big.filter(ImageFilter.GaussianBlur(radius=scale * 0.75))
+    # soglia dolce attorno a metà: inchiostro quasi nero, carta bianca, 2-3 pixel di bordo sfumato
+    ink = big.point(lambda v: 30 + max(0, min(225, (v - 128) * 3 + 112)))
     out = Image.new("RGB", (w * scale + pad * 2, h * scale + pad * 2), (225, 228, 232))
     mask = Image.new("L", out.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle((pad, pad, pad + w * scale - 1, pad + h * scale - 1), radius=8 * scale // 2, fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle((pad, pad, pad + w * scale - 1, pad + h * scale - 1), radius=4 * scale, fill=255)
     label = Image.new("RGB", out.size, (255, 255, 255))
     label.paste(ink.convert("RGB"), (pad, pad))
     out.paste(label, (0, 0), mask)
+    # pochi grigi: PNG piccolo anche ingrandito
+    out = out.quantize(colors=16, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     buf = io.BytesIO()
     out.save(buf, "PNG", optimize=True)
     return buf.getvalue()
