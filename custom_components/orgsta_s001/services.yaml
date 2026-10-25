@@ -164,3 +164,9 @@ change_roll:
           - 12.5x74
           - 14x40_trasparente
           translation_key: paper
+    used:
+      selector:
+        number:
+          min: 0
+          max: 5000
+          mode: box

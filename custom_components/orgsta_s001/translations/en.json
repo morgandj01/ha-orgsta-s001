@@ -416,6 +416,10 @@
         "paper": {
           "name": "Paper",
           "description": "The roll's paper: if empty, 14 x 30 mm for a new roll"
+        },
+        "used": {
+          "name": "Labels already used",
+          "description": "Corrects the count of the loaded roll"
         }
       }
     }

@@ -97,6 +97,7 @@ CHANGE_ROLL_SCHEMA = vol.Schema(
         vol.Required(ATTR_COLOR): vol.In(list(ROLL_COLORS)),
         vol.Optional(ATTR_KIND, default="new"): vol.In(list(ROLL_KINDS)),
         vol.Optional(ATTR_PAPER): vol.In(list(PAPERS)),
+        vol.Optional("used"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5000)),
     }
 )
 
@@ -212,7 +213,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async def handle_change_roll(call: ServiceCall) -> ServiceResponse:
         return _coordinator(call).async_change_roll(call.data[ATTR_COLOR], call.data[ATTR_KIND],
-                                                    call.data.get(ATTR_PAPER))
+                                                    call.data.get(ATTR_PAPER), call.data.get("used"))
 
     hass.services.async_register(
         DOMAIN, SERVICE_CHANGE_ROLL, handle_change_roll, schema=CHANGE_ROLL_SCHEMA,

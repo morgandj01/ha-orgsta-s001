@@ -160,7 +160,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.async_change_roll(self.data.roll_color, "new")
 
     @callback
-    def async_change_roll(self, color: str, kind: str, paper: str | None = None) -> dict:
+    def async_change_roll(self, color: str, kind: str, paper: str | None = None, used: int | None = None) -> dict:
         """Il rotolo cambiato: `new` uno nuovo dal cassetto (si conta da zero), `started` uno tolto a metà rimesso
         (riparte dalle etichette che gli restavano), `unknown` uno iniziato di cui non si sa niente, `same` è ancora
         quello di prima (si toglie solo il «da confermare"). Quello che c'era, se non era finito e si sapeva quante
@@ -194,6 +194,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         if paper:
             self.paper = paper
             d.roll_papers[color] = paper
+        if used is not None:                              # 0.5.4: le etichette già uscite, corrette a mano
+            d.roll_used = max(0, int(used))
         d.roll_check, d.roll_check_time = None, None
         self._save_roll()
         self.async_set_updated_data(d)
