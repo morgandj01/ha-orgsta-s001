@@ -69,6 +69,12 @@
       },
       "roll_check": {
         "name": "Rotolo da confermare"
+      },
+      "paper_loaded": {
+        "name": "Carta dentro"
+      },
+      "original": {
+        "name": "Rotolo originale"
       }
     },
     "button": {
@@ -406,6 +412,10 @@
         "kind": {
           "name": "Che rotolo",
           "description": "Nuovo, uno iniziato rimesso, o lo stesso di prima"
+        },
+        "paper": {
+          "name": "Carta",
+          "description": "La carta del rotolo: se manca, 14 x 30 mm per un rotolo nuovo"
         }
       }
     }

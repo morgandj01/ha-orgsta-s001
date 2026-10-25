@@ -65,6 +65,18 @@
         "state": {
           "on": "mdi:help-circle"
         }
+      },
+      "paper_loaded": {
+        "default": "mdi:paper-roll-outline",
+        "state": {
+          "on": "mdi:paper-roll"
+        }
+      },
+      "original": {
+        "default": "mdi:nfc-variant-off",
+        "state": {
+          "on": "mdi:nfc-variant"
+        }
       }
     },
     "button": {

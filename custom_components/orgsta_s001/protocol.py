@@ -41,6 +41,7 @@ class Cmd(IntEnum):
     STATUS_QUERY = 0x10
     PAPER_TYPE = 0x28
     PAPER_QUERY = 0x72
+    PAPER_REPLY = 0x73
 
 
 STATUS_REPLY_COMMANDS = (0x80, 0x81, 0xFF)
@@ -137,7 +138,13 @@ class Status:
         return bool(self.bits & (1 << 11))
 
     @property
+    def paper_loaded(self) -> bool:
+        """Carta dentro (0.5.1, dalla storia di HA: 0x3003 pronta, 0x2903 col coperchio aperto)."""
+        return bool(self.bits & (1 << 12))
+
+    @property
     def valid_paper(self) -> bool:
+        """Rotolo originale: la stampante ha letto il tag NFC (NTAG213) sul lato del rotolo."""
         return bool(self.bits & (1 << 13))
 
     @property
@@ -173,6 +180,29 @@ def parse_status(frame: Frame) -> Status | None:
     )
 
 
+@dataclass(frozen=True)
+class PaperDetails:
+    """La risposta 0x73 alla domanda 0x72 (TiMini Print, yk_astra_p1): quello che la stampante legge dal tag del
+    rotolo originale. Quattro byte; il significato dei numeri è quello di TiMini, da verificare sulla carta vera"""
+
+    paper_type: int
+    width: int
+    length: int
+    color: int
+    raw: bytes
+
+    def as_dict(self) -> dict:
+        return {"tipo": self.paper_type, "larghezza": self.width, "lunghezza": self.length, "colore": self.color,
+                "grezzo": self.raw.hex()}
+
+
+def parse_paper_details(frame: Frame) -> PaperDetails | None:
+    if frame.cmd != Cmd.PAPER_REPLY or len(frame.payload) != 4:
+        return None
+    p = frame.payload
+    return PaperDetails(p[0], p[1], p[2], p[3], bytes(p))
+
+
 @dataclass
 class _Seq:
     value: int = 0
@@ -195,6 +225,10 @@ class JobBuilder:
 
     def status_query(self) -> bytes:
         return pack_frame(Cmd.STATUS_QUERY, b"", self.seq.take())
+
+    def paper_query(self) -> bytes:
+        """«Che carta hai dentro?»: risponde solo con un rotolo originale (bit 13 dello stato)."""
+        return pack_frame(Cmd.PAPER_QUERY, b"\x01", self.seq.take())
 
     def _f(self, cmd: int, payload: bytes = b"") -> bytes:
         return pack_frame(cmd, payload, self.seq.take())

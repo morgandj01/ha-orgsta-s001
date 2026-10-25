@@ -152,3 +152,15 @@ change_roll:
           - unknown
           - same
           translation_key: roll_kind
+    paper:
+      selector:
+        select:
+          options:
+          - 12x40
+          - 14x40
+          - 14x30
+          - 14x22
+          - 14x50
+          - 12.5x74
+          - 14x40_trasparente
+          translation_key: paper

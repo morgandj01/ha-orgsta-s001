@@ -20,6 +20,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_a
             Powered(c),
             RollCounted(c),
             RollCheck(c),
+            Flag(c, "paper_loaded", None, lambda st: st.paper_loaded),
+            Original(c),
         ]
     )
 
@@ -85,3 +87,20 @@ class RollCheck(S001Entity, BinarySensorEntity):
     def extra_state_attributes(self):
         d = self.coordinator.data
         return {"perche": d.roll_check, "dal": d.roll_check_time.isoformat() if d.roll_check_time else None}
+
+
+class Original(S001Entity, BinarySensorEntity):
+    """Acceso se dentro c'è un rotolo originale: la stampante ha letto il suo tag NFC (0.5.1). Ricordato anche a
+    stampante spenta; gli attributi sono i 4 byte del tag (tipo, larghezza, lunghezza, colore)."""
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "original")
+
+    @property
+    def is_on(self):
+        return self.coordinator.data.original
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data
+        return {**(d.tag or {}), "letto_il": d.tag_time.isoformat() if d.tag_time else None}

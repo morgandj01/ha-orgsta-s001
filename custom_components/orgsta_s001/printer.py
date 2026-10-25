@@ -11,11 +11,12 @@ from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from .const import CHAR_FLOW, CHAR_NOTIFY, CHAR_WRITE
-from .protocol import FrameDecoder, JobBuilder, Status, parse_status
+from .protocol import FrameDecoder, JobBuilder, PaperDetails, Status, parse_paper_details, parse_status
 
 _LOGGER = logging.getLogger(__name__)
 
 STATUS_TIMEOUT = 6.0
+PAPER_TIMEOUT = 3.0
 COMPLETION_TIMEOUT = 40.0
 MAX_CHUNK = 128
 CHUNK_DELAY = 0.02
@@ -45,10 +46,16 @@ class S001Session:
         self._last: Status | None = None
         self._saw_printing = False
         self._done = asyncio.Event()
+        self._paper_event = asyncio.Event()
+        self.paper: PaperDetails | None = None
 
     # ---- notifications ----
     def _notify(self, _char, data: bytearray) -> None:
         for frame in self._decoder.feed(bytes(data)):
+            if (pd := parse_paper_details(frame)) is not None:
+                self.paper = pd
+                self._paper_event.set()
+                continue
             st = parse_status(frame)
             if st is None:
                 continue
@@ -112,6 +119,18 @@ class S001Session:
         except (TimeoutError, asyncio.TimeoutError):
             return self._last
         return self._last
+
+    async def query_paper(self, builder: JobBuilder) -> PaperDetails | None:
+        """Il tag del rotolo, solo se la stampante dice che è originale. Mai un errore: senza risposta None."""
+        if self._last is None or not self._last.valid_paper:
+            return None
+        self._paper_event.clear()
+        try:
+            await self._write(builder.paper_query())
+            await asyncio.wait_for(self._paper_event.wait(), PAPER_TIMEOUT)
+        except (BleakError, TimeoutError, asyncio.TimeoutError):
+            return None
+        return self.paper
 
     async def send_job(self, frames: list[bytes], wait: bool = True) -> None:
         self._saw_printing = False

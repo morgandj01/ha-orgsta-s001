@@ -69,6 +69,12 @@
       },
       "roll_check": {
         "name": "Roll to confirm"
+      },
+      "paper_loaded": {
+        "name": "Paper loaded"
+      },
+      "original": {
+        "name": "Original roll"
       }
     },
     "button": {
@@ -406,6 +412,10 @@
         "kind": {
           "name": "Which roll",
           "description": "New, a started one, or the same"
+        },
+        "paper": {
+          "name": "Paper",
+          "description": "The roll's paper: if empty, 14 x 30 mm for a new roll"
         }
       }
     }

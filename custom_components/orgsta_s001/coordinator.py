@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_DENSITY, DOMAIN
 from .printer import PrinterError, S001Session, check_ready
-from .protocol import TAG_START, JobBuilder, Status, pack_rows
+from .protocol import TAG_START, JobBuilder, PaperDetails, Status, pack_rows
 from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, to_raster
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +58,12 @@ class PrinterState:
     started: dict = field(default_factory=dict)
     roll_check: str | None = None
     roll_check_time: datetime | None = None
+    # il tag NFC dei rotoli originali (0.5.1): originale = l'ultima volta che la stampante l'ha detto (bit 13), tag =
+    # i 4 byte che risponde a «che carta hai dentro?»; la carta (12x40, 14x30…) di ogni colore, da «Cambia rotolo»
+    original: bool | None = None
+    tag: dict | None = None
+    tag_time: datetime | None = None
+    roll_papers: dict = field(default_factory=dict)
 
     @property
     def roll_left(self) -> int | None:
@@ -71,6 +77,8 @@ ROLL_MIN_LEARN = 10
 # i colori dei rotoli (il nome è anche l'opzione del menu «Rotolo montato»)
 ROLL_COLORS = {"bianco": "#ffffff", "azzurro": "#7fd3ff", "giallo": "#ffe14d", "rosa": "#ffaecf"}
 ROLL_KINDS = ("new", "started", "same", "unknown")
+# la carta dei rotoli nuovi comprati da Morgan (colorati e bianchi, 25 ottobre 2026): 14 x 30 mm, 210 etichette
+NEW_ROLL_PAPER = "14x30"
 
 
 type S001ConfigEntry = ConfigEntry["S001Coordinator"]
@@ -89,6 +97,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.offset: int = 0                      # «Spostamento stampa», in punti (8 = 1 mm), sulla carta a etichette
         self.paper: str = DEFAULT_PAPER
         self.quick_text: str = ""
+        self.paper_saved: set[str] = set()       # le chiavi già nel registro (la carta c'è dalla 0.5.1)
         self.data = PrinterState()
         self._auto_task: asyncio.Task | None = None
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{address.replace(':', '').lower()}")
@@ -96,6 +105,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
     # ---- rotolo: etichette usate da quando è stato messo, capienza imparata quando finisce ----
     async def async_load_roll(self) -> None:
         data = await self._store.async_load() or {}
+        self.paper_saved = set(data)
         d = self.data
         d.roll_used = int(data.get("used") or 0)
         cap = data.get("capacity")
@@ -108,6 +118,12 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         d.started = {c: [int(x) for x in (data.get("started") or {}).get(c) or [] if int(x) > 0] for c in ROLL_COLORS}
         d.roll_check = data.get("check")
         d.roll_check_time = dt_util.parse_datetime(data["check_time"]) if data.get("check_time") else None
+        d.original = data.get("original")
+        d.tag = data.get("tag")
+        d.tag_time = dt_util.parse_datetime(data["tag_time"]) if data.get("tag_time") else None
+        d.roll_papers = {c: p for c, p in (data.get("papers") or {}).items() if c in ROLL_COLORS and p in PAPERS}
+        if data.get("paper") in PAPERS:
+            self.paper = data["paper"]
 
     @callback
     def _save_roll(self) -> None:
@@ -124,6 +140,11 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 "started": d.started,
                 "check": d.roll_check,
                 "check_time": d.roll_check_time.isoformat() if d.roll_check_time else None,
+                "original": d.original,
+                "tag": d.tag,
+                "tag_time": d.tag_time.isoformat() if d.tag_time else None,
+                "papers": d.roll_papers,
+                "paper": self.paper,
             },
             1,
         )
@@ -134,11 +155,14 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.async_change_roll(self.data.roll_color, "new")
 
     @callback
-    def async_change_roll(self, color: str, kind: str) -> dict:
+    def async_change_roll(self, color: str, kind: str, paper: str | None = None) -> dict:
         """Il rotolo cambiato: `new` uno nuovo dal cassetto (si conta da zero), `started` uno tolto a metà rimesso
         (riparte dalle etichette che gli restavano), `unknown` uno iniziato di cui non si sa niente, `same` è ancora
         quello di prima (si toglie solo il «da confermare"). Quello che c'era, se non era finito e si sapeva quante
-        ne restavano, va tra gli iniziati del suo colore."""
+        ne restavano, va tra gli iniziati del suo colore. La carta: quella detta, se no per un rotolo nuovo 14x30
+        (quelli comprati), se no quella che aveva quel colore l'ultima volta; resta quella di prima se non si sa."""
+        if paper is not None and paper not in PAPERS:
+            raise ValueError(f"carta sconosciuta: {paper}")
         if color not in ROLL_COLORS:
             raise ValueError(f"colore sconosciuto: {color}")
         if kind not in ROLL_KINDS:
@@ -159,6 +183,10 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 d.roll_used, d.roll_counted = 0, False
             d.roll_color, d.roll_finished = color, False
             d.roll_changed = dt_util.utcnow()
+            paper = paper or (NEW_ROLL_PAPER if kind == "new" else d.roll_papers.get(color))
+        if paper:
+            self.paper = paper
+            d.roll_papers[color] = paper
         d.roll_check, d.roll_check_time = None, None
         self._save_roll()
         self.async_set_updated_data(d)
@@ -185,7 +213,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 "scorte": {c: int(d.stock.get(c) or 0) for c in ROLL_COLORS},
                 "iniziati": {c: list(d.started.get(c) or []) for c in ROLL_COLORS},
                 "colori": ROLL_COLORS, "da_confermare": d.roll_check,
-                "da_confermare_dal": d.roll_check_time.isoformat() if d.roll_check_time else None}
+                "da_confermare_dal": d.roll_check_time.isoformat() if d.roll_check_time else None,
+                "carta": self.paper, "carte": dict(d.roll_papers), "originale": d.original, "tag": d.tag}
 
     @callback
     def _roll_maybe_changed(self, why: str) -> None:
@@ -194,6 +223,35 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             d.roll_check, d.roll_check_time = why, dt_util.utcnow()
             _LOGGER.debug("S001 %s: rotolo forse cambiato (%s)", self.address, why)
             self._save_roll()
+
+    @callback
+    def async_set_paper(self, paper: str) -> None:
+        """«Carta caricata» scelta a mano: vale anche per il colore dentro."""
+        if paper in PAPERS:
+            self.paper = paper
+            self.data.roll_papers[self.data.roll_color] = paper
+            self._save_roll()
+            self.async_set_updated_data(self.data)
+
+    @callback
+    def _on_paper(self, pd: PaperDetails | None) -> None:
+        """Il tag letto: se è diverso dall'ultimo, il rotolo dentro è un altro."""
+        if pd is None:
+            return
+        d = self.data
+        tag = pd.as_dict()
+        if d.tag is not None and d.tag.get("grezzo") != tag["grezzo"]:
+            self._roll_maybe_changed("tag")
+        if tag != d.tag:
+            _LOGGER.info("S001 %s: tag del rotolo %s", self.address, tag)
+        d.tag, d.tag_time = tag, dt_util.utcnow()
+        self._save_roll()
+
+    async def _read_tag(self, session: S001Session, builder: JobBuilder) -> None:
+        try:
+            self._on_paper(await session.query_paper(builder))
+        except Exception:  # noqa: BLE001 - il tag è un di più: mai che fermi una stampa
+            _LOGGER.debug("lettura del tag non riuscita", exc_info=True)
 
     @callback
     def async_set_roll_capacity(self, value: int | None) -> None:
@@ -321,6 +379,16 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             self._roll_maybe_changed("carta")            # era finita e adesso c'è carta: un rotolo nuovo dentro
         if st.cover_open and (prev is None or not prev.cover_open):
             self._roll_maybe_changed("coperchio")
+        # originale o no (il tag): ricordato anche da spenta, così un rotolo cambiato a stampante spenta si vede alla
+        # prima accensione. Con la carta finita il bit non conta
+        if st.paper_loaded and not st.paper_out:
+            if self.data.original is not None and self.data.original != st.valid_paper:
+                self._roll_maybe_changed("tag")
+            if self.data.original != st.valid_paper:
+                self.data.original = st.valid_paper
+                if not st.valid_paper:
+                    self.data.tag = None
+                self._save_roll()
         self.data.status = st
         self.data.status_time = dt_util.utcnow()
         self.data.reachable = True
@@ -353,6 +421,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             try:
                 async with S001Session(dev, self._on_status) as s:
                     st = await s.query_status(builder)
+                    await self._read_tag(s, builder)
             except PrinterError as err:
                 self._raise(err)
             self.data.last_error = None
@@ -384,6 +453,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 async with S001Session(dev, self._on_status) as s:
                     st = await s.query_status(builder)
                     check_ready(st)
+                    await self._read_tag(s, builder)
                     n = max(1, int(copies))
                     for page in range(n):
                         await s.send_job(builder.build_page(rows, first=page == 0, last=page == n - 1))

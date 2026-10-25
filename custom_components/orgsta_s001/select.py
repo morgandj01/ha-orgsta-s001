@@ -26,7 +26,9 @@ class Paper(S001Entity, SelectEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        if (last := await self.async_get_last_state()) and last.state in PAPERS:
+        # dalla 0.5.1 la carta sta nel registro del rotolo; lo stato vecchio serve solo la prima volta
+        if "paper" not in self.coordinator.paper_saved and (last := await self.async_get_last_state()) \
+                and last.state in PAPERS:
             self.coordinator.paper = last.state
 
     @property
@@ -34,8 +36,7 @@ class Paper(S001Entity, SelectEntity, RestoreEntity):
         return self.coordinator.paper
 
     async def async_select_option(self, option: str) -> None:
-        self.coordinator.paper = option
-        self.async_write_ha_state()
+        self.coordinator.async_set_paper(option)
 
 
 class RollColor(S001Entity, SelectEntity):
