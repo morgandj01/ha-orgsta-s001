@@ -18,6 +18,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_ALIGN,
+    ATTR_COLOR,
+    ATTR_KIND,
     ATTR_BORDER,
     ATTR_COPIES,
     ATTR_DATE,
@@ -39,11 +41,12 @@ from .const import (
     CONF_ADDRESS,
     DOMAIN,
     MAX_COPIES,
+    SERVICE_CHANGE_ROLL,
     SERVICE_FEED,
     SERVICE_PREVIEW,
     SERVICE_PRINT,
 )
-from .coordinator import S001ConfigEntry, S001Coordinator
+from .coordinator import ROLL_COLORS, ROLL_KINDS, S001ConfigEntry, S001Coordinator
 from .render import LAYOUTS, PAPERS, LabelError, LabelSpec
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,6 +91,13 @@ PRINT_SCHEMA = vol.Schema(
 )
 PREVIEW_SCHEMA = vol.Schema(LABEL_SCHEMA)
 FEED_SCHEMA = vol.Schema({vol.Optional(ATTR_DEVICE_ID): cv.string})
+CHANGE_ROLL_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_COLOR): vol.In(list(ROLL_COLORS)),
+        vol.Optional(ATTR_KIND, default="new"): vol.In(list(ROLL_KINDS)),
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -198,6 +208,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         DOMAIN, SERVICE_PREVIEW, handle_preview, schema=PREVIEW_SCHEMA, supports_response=SupportsResponse.OPTIONAL
     )
     hass.services.async_register(DOMAIN, SERVICE_FEED, handle_feed, schema=FEED_SCHEMA)
+
+    async def handle_change_roll(call: ServiceCall) -> ServiceResponse:
+        return _coordinator(call).async_change_roll(call.data[ATTR_COLOR], call.data[ATTR_KIND])
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_CHANGE_ROLL, handle_change_roll, schema=CHANGE_ROLL_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     return True
 
 

@@ -8,12 +8,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DEFAULT_DENSITY
-from .coordinator import S001ConfigEntry
+from .coordinator import ROLL_COLORS, S001ConfigEntry
 from .entity import S001Entity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
-    async_add_entities([Density(entry.runtime_data), RollCapacity(entry.runtime_data), PrintOffset(entry.runtime_data)])
+    c = entry.runtime_data
+    async_add_entities([Density(c), RollCapacity(c), PrintOffset(c)] + [RollStock(c, col) for col in ROLL_COLORS])
 
 
 class Density(S001Entity, RestoreNumber):
@@ -86,3 +87,24 @@ class PrintOffset(S001Entity, RestoreNumber):
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.offset = int(value)
         self.async_write_ha_state()
+
+
+class RollStock(S001Entity, NumberEntity):
+    """Quanti rotoli nuovi di un colore ci sono nel cassetto (0.5.0): scende da solo quando se ne mette uno."""
+
+    _attr_native_min_value = 0
+    _attr_native_max_value = 99
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+    _attr_native_unit_of_measurement = "rotoli"
+
+    def __init__(self, c, color: str) -> None:
+        super().__init__(c, f"stock_{color}")
+        self._color = color
+
+    @property
+    def native_value(self):
+        return int(self.coordinator.data.stock.get(self._color) or 0)
+
+    async def async_set_native_value(self, value: float) -> None:
+        self.coordinator.async_set_stock(self._color, int(value))

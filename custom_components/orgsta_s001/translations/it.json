@@ -66,6 +66,9 @@
       },
       "roll_counted": {
         "name": "Rotolo contato da nuovo"
+      },
+      "roll_check": {
+        "name": "Rotolo da confermare"
       }
     },
     "button": {
@@ -99,6 +102,18 @@
       },
       "print_offset": {
         "name": "Spostamento stampa"
+      },
+      "stock_bianco": {
+        "name": "Scorta bianco"
+      },
+      "stock_azzurro": {
+        "name": "Scorta azzurro"
+      },
+      "stock_giallo": {
+        "name": "Scorta giallo"
+      },
+      "stock_rosa": {
+        "name": "Scorta rosa"
       }
     },
     "select": {
@@ -113,6 +128,15 @@
           "12.5x74": "12,5 x 74 mm",
           "14x40_trasparente": "14 x 40 mm trasparente",
           "continuo_15": "Continua 15 mm"
+        }
+      },
+      "roll_color": {
+        "name": "Rotolo montato",
+        "state": {
+          "bianco": "Bianco",
+          "azzurro": "Azzurro",
+          "giallo": "Giallo",
+          "rosa": "Rosa"
         }
       }
     },
@@ -181,6 +205,22 @@
       "options": {
         "center": "Centrato",
         "left": "A sinistra"
+      }
+    },
+    "roll_color": {
+      "options": {
+        "bianco": "Bianco",
+        "azzurro": "Azzurro",
+        "giallo": "Giallo",
+        "rosa": "Rosa"
+      }
+    },
+    "roll_kind": {
+      "options": {
+        "new": "Nuovo dal cassetto",
+        "started": "Uno già iniziato rimesso",
+        "unknown": "Iniziato, non si sa quante ne restano",
+        "same": "È sempre quello di prima"
       }
     }
   },
@@ -348,6 +388,24 @@
         "device_id": {
           "name": "Stampante",
           "description": "Facoltativo se ne hai una sola"
+        }
+      }
+    },
+    "change_roll": {
+      "name": "Cambia rotolo",
+      "description": "Il rotolo messo dentro: scala il cassetto e ricorda quelli tolti a metà",
+      "fields": {
+        "device_id": {
+          "name": "Stampante",
+          "description": "Facoltativo se ne hai una sola"
+        },
+        "color": {
+          "name": "Colore",
+          "description": "Il colore del rotolo messo"
+        },
+        "kind": {
+          "name": "Che rotolo",
+          "description": "Nuovo, uno iniziato rimesso, o lo stesso di prima"
         }
       }
     }

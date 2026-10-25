@@ -66,6 +66,9 @@
       },
       "roll_counted": {
         "name": "Roll counted from new"
+      },
+      "roll_check": {
+        "name": "Roll to confirm"
       }
     },
     "button": {
@@ -99,6 +102,18 @@
       },
       "print_offset": {
         "name": "Print offset"
+      },
+      "stock_bianco": {
+        "name": "Spare rolls white"
+      },
+      "stock_azzurro": {
+        "name": "Spare rolls light blue"
+      },
+      "stock_giallo": {
+        "name": "Spare rolls yellow"
+      },
+      "stock_rosa": {
+        "name": "Spare rolls pink"
       }
     },
     "select": {
@@ -113,6 +128,15 @@
           "12.5x74": "12,5 x 74 mm",
           "14x40_trasparente": "14 x 40 mm transparent",
           "continuo_15": "Continuous 15 mm"
+        }
+      },
+      "roll_color": {
+        "name": "Loaded roll",
+        "state": {
+          "bianco": "White",
+          "azzurro": "Light blue",
+          "giallo": "Yellow",
+          "rosa": "Pink"
         }
       }
     },
@@ -181,6 +205,22 @@
       "options": {
         "center": "Centered",
         "left": "Left"
+      }
+    },
+    "roll_color": {
+      "options": {
+        "bianco": "White",
+        "azzurro": "Light blue",
+        "giallo": "Yellow",
+        "rosa": "Pink"
+      }
+    },
+    "roll_kind": {
+      "options": {
+        "new": "New from the drawer",
+        "started": "A started roll put back",
+        "unknown": "Started, count unknown",
+        "same": "Still the same roll"
       }
     }
   },
@@ -348,6 +388,24 @@
         "device_id": {
           "name": "Printer",
           "description": "Optional when you have only one"
+        }
+      }
+    },
+    "change_roll": {
+      "name": "Change roll",
+      "description": "The roll just loaded: takes it from the drawer and remembers half-used rolls",
+      "fields": {
+        "device_id": {
+          "name": "Printer",
+          "description": "Optional with one printer"
+        },
+        "color": {
+          "name": "Color",
+          "description": "Color of the loaded roll"
+        },
+        "kind": {
+          "name": "Which roll",
+          "description": "New, a started one, or the same"
         }
       }
     }

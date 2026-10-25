@@ -151,11 +151,17 @@ class RollUsedSensor(S001Entity, SensorEntity):
     @property
     def extra_state_attributes(self):
         d = self.coordinator.data
+        info = self.coordinator.roll_info()
         return {
             "capienza": d.roll_capacity,
             "rimaste": d.roll_left,
             "contato_da_nuovo": d.roll_counted,
             "cambiato_il": d.roll_changed.isoformat() if d.roll_changed else None,
+            "colore": info["colore"],
+            "finito": info["finito"],
+            "scorte": info["scorte"],
+            "iniziati": info["iniziati"],
+            "da_confermare": info["da_confermare"],
         }
 
 

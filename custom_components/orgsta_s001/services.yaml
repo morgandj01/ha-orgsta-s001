@@ -126,3 +126,29 @@ preview:
 feed:
   fields:
     device_id: *id001
+change_roll:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: orgsta_s001
+    color:
+      required: true
+      selector:
+        select:
+          options:
+          - bianco
+          - azzurro
+          - giallo
+          - rosa
+          translation_key: roll_color
+    kind:
+      default: new
+      selector:
+        select:
+          options:
+          - new
+          - started
+          - unknown
+          - same
+          translation_key: roll_kind

@@ -19,6 +19,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_a
             Printing(c),
             Powered(c),
             RollCounted(c),
+            RollCheck(c),
         ]
     )
 
@@ -67,3 +68,20 @@ class RollCounted(S001Entity, BinarySensorEntity):
     @property
     def is_on(self):
         return self.coordinator.data.roll_counted
+
+
+class RollCheck(S001Entity, BinarySensorEntity):
+    """Acceso se la stampante dice che il rotolo forse è stato cambiato (coperchio aperto, o carta finita e poi di
+    nuovo carta) e nessuno ha ancora detto quale c'è dentro (0.5.0)."""
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "roll_check")
+
+    @property
+    def is_on(self):
+        return self.coordinator.data.roll_check is not None
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data
+        return {"perche": d.roll_check, "dal": d.roll_check_time.isoformat() if d.roll_check_time else None}

@@ -49,6 +49,15 @@ class PrinterState:
     roll_capacity: int | None = None
     roll_counted: bool = False
     roll_changed: datetime | None = None
+    # i rotoli (0.5.0): il colore di quello dentro, i nuovi nel cassetto per colore, quelli tolti a metà con le
+    # etichette che gli restano, se è finito, e se la stampante dice che forse è stato cambiato (coperchio aperto,
+    # carta finita e poi di nuovo carta) e nessuno l'ha ancora detto
+    roll_color: str = "bianco"
+    roll_finished: bool = False
+    stock: dict = field(default_factory=dict)
+    started: dict = field(default_factory=dict)
+    roll_check: str | None = None
+    roll_check_time: datetime | None = None
 
     @property
     def roll_left(self) -> int | None:
@@ -59,6 +68,9 @@ class PrinterState:
 
 # Sotto queste etichette un rotolo «finito» non insegna niente (carta tolta a metà, sensore che sbaglia)
 ROLL_MIN_LEARN = 10
+# i colori dei rotoli (il nome è anche l'opzione del menu «Rotolo montato»)
+ROLL_COLORS = {"bianco": "#ffffff", "azzurro": "#7fd3ff", "giallo": "#ffe14d", "rosa": "#ffaecf"}
+ROLL_KINDS = ("new", "started", "same", "unknown")
 
 
 type S001ConfigEntry = ConfigEntry["S001Coordinator"]
@@ -90,6 +102,12 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         d.roll_capacity = int(cap) if cap else None
         d.roll_counted = bool(data.get("counted"))
         d.roll_changed = dt_util.parse_datetime(data["changed"]) if data.get("changed") else None
+        d.roll_color = data.get("color") if data.get("color") in ROLL_COLORS else "bianco"
+        d.roll_finished = bool(data.get("finished"))
+        d.stock = {c: max(0, int((data.get("stock") or {}).get(c) or 0)) for c in ROLL_COLORS}
+        d.started = {c: [int(x) for x in (data.get("started") or {}).get(c) or [] if int(x) > 0] for c in ROLL_COLORS}
+        d.roll_check = data.get("check")
+        d.roll_check_time = dt_util.parse_datetime(data["check_time"]) if data.get("check_time") else None
 
     @callback
     def _save_roll(self) -> None:
@@ -100,18 +118,82 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 "capacity": d.roll_capacity,
                 "counted": d.roll_counted,
                 "changed": d.roll_changed.isoformat() if d.roll_changed else None,
+                "color": d.roll_color,
+                "finished": d.roll_finished,
+                "stock": d.stock,
+                "started": d.started,
+                "check": d.roll_check,
+                "check_time": d.roll_check_time.isoformat() if d.roll_check_time else None,
             },
             1,
         )
 
     @callback
     def async_new_roll(self) -> None:
+        """«Rotolo nuovo»: un rotolo nuovo dello stesso colore di quello dentro (dal cassetto)."""
+        self.async_change_roll(self.data.roll_color, "new")
+
+    @callback
+    def async_change_roll(self, color: str, kind: str) -> dict:
+        """Il rotolo cambiato: `new` uno nuovo dal cassetto (si conta da zero), `started` uno tolto a metà rimesso
+        (riparte dalle etichette che gli restavano), `unknown` uno iniziato di cui non si sa niente, `same` è ancora
+        quello di prima (si toglie solo il «da confermare"). Quello che c'era, se non era finito e si sapeva quante
+        ne restavano, va tra gli iniziati del suo colore."""
+        if color not in ROLL_COLORS:
+            raise ValueError(f"colore sconosciuto: {color}")
+        if kind not in ROLL_KINDS:
+            raise ValueError(f"cambio sconosciuto: {kind}")
         d = self.data
-        d.roll_used = 0
-        d.roll_counted = True
-        d.roll_changed = dt_util.utcnow()
+        if kind != "same":
+            left = d.roll_left
+            if not d.roll_finished and left:
+                d.started.setdefault(d.roll_color, []).append(int(left))
+            if kind == "new":
+                d.stock[color] = max(0, int(d.stock.get(color) or 0) - 1)
+                d.roll_used, d.roll_counted = 0, True
+            elif kind == "started" and d.started.get(color):
+                left = d.started[color].pop()
+                d.roll_counted = bool(d.roll_capacity)
+                d.roll_used = max(0, (d.roll_capacity or left) - left)
+            else:
+                d.roll_used, d.roll_counted = 0, False
+            d.roll_color, d.roll_finished = color, False
+            d.roll_changed = dt_util.utcnow()
+        d.roll_check, d.roll_check_time = None, None
         self._save_roll()
         self.async_set_updated_data(d)
+        return self.roll_info()
+
+    @callback
+    def async_set_stock(self, color: str, n: int) -> None:
+        self.data.stock[color] = max(0, int(n))
+        self._save_roll()
+        self.async_set_updated_data(self.data)
+
+    @callback
+    def async_set_color(self, color: str) -> None:
+        """Il colore di quello dentro corretto a mano (senza toccare conti e cassetto)."""
+        if color in ROLL_COLORS:
+            self.data.roll_color = color
+            self._save_roll()
+            self.async_set_updated_data(self.data)
+
+    def roll_info(self) -> dict:
+        d = self.data
+        return {"colore": d.roll_color, "usate": d.roll_used, "capienza": d.roll_capacity, "rimaste": d.roll_left,
+                "contato_da_nuovo": d.roll_counted, "finito": d.roll_finished,
+                "scorte": {c: int(d.stock.get(c) or 0) for c in ROLL_COLORS},
+                "iniziati": {c: list(d.started.get(c) or []) for c in ROLL_COLORS},
+                "colori": ROLL_COLORS, "da_confermare": d.roll_check,
+                "da_confermare_dal": d.roll_check_time.isoformat() if d.roll_check_time else None}
+
+    @callback
+    def _roll_maybe_changed(self, why: str) -> None:
+        d = self.data
+        if d.roll_check is None or why == "carta":
+            d.roll_check, d.roll_check_time = why, dt_util.utcnow()
+            _LOGGER.debug("S001 %s: rotolo forse cambiato (%s)", self.address, why)
+            self._save_roll()
 
     @callback
     def async_set_roll_capacity(self, value: int | None) -> None:
@@ -126,8 +208,9 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         if d.roll_counted and d.roll_used > ROLL_MIN_LEARN:
             _LOGGER.info("S001 %s: rotolo finito dopo %s etichette, capienza imparata", self.address, d.roll_used)
             d.roll_capacity = d.roll_used
-            d.roll_counted = False
-            self._save_roll()
+        d.roll_finished = True
+        d.roll_counted = False
+        self._save_roll()
 
     # ---- accesa/spenta dagli annunci Bluetooth (i proxy li sentono già, nessuna connessione) ----
     @callback
@@ -234,6 +317,10 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         prev = self.data.status
         if st.paper_out and (prev is None or not prev.paper_out):
             self._roll_paper_out()
+        if prev is not None and prev.paper_out and not st.paper_out:
+            self._roll_maybe_changed("carta")            # era finita e adesso c'è carta: un rotolo nuovo dentro
+        if st.cover_open and (prev is None or not prev.cover_open):
+            self._roll_maybe_changed("coperchio")
         self.data.status = st
         self.data.status_time = dt_util.utcnow()
         self.data.reachable = True

@@ -59,6 +59,12 @@
       },
       "roll_counted": {
         "default": "mdi:counter"
+      },
+      "roll_check": {
+        "default": "mdi:paper-roll",
+        "state": {
+          "on": "mdi:help-circle"
+        }
       }
     },
     "button": {
@@ -92,11 +98,26 @@
       },
       "print_offset": {
         "default": "mdi:arrow-left-right"
+      },
+      "stock_bianco": {
+        "default": "mdi:package-variant"
+      },
+      "stock_azzurro": {
+        "default": "mdi:package-variant"
+      },
+      "stock_giallo": {
+        "default": "mdi:package-variant"
+      },
+      "stock_rosa": {
+        "default": "mdi:package-variant"
       }
     },
     "select": {
       "paper": {
         "default": "mdi:paper-roll"
+      },
+      "roll_color": {
+        "default": "mdi:palette"
       }
     },
     "text": {
@@ -114,6 +135,9 @@
     },
     "feed": {
       "service": "mdi:arrow-down-bold-box"
+    },
+    "change_roll": {
+      "service": "mdi:paper-roll"
     }
   }
 }
