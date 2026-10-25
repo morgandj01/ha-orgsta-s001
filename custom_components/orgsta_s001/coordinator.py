@@ -184,6 +184,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             d.roll_color, d.roll_finished = color, False
             d.roll_changed = dt_util.utcnow()
             paper = paper or (NEW_ROLL_PAPER if kind == "new" else d.roll_papers.get(color))
+        else:
+            d.roll_finished = False                       # «è lo stesso»: allora non era finito
         if paper:
             self.paper = paper
             d.roll_papers[color] = paper
@@ -373,9 +375,12 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
     @callback
     def _on_status(self, st: Status) -> None:
         prev = self.data.status
-        if st.paper_out and (prev is None or not prev.paper_out):
+        # col coperchio aperto la stampante dice anche «carta finita» (0x2903, 25 ottobre): lì non conta
+        finita = st.paper_out and not st.cover_open
+        prima_finita = prev is not None and prev.paper_out and not prev.cover_open
+        if finita and not prima_finita:
             self._roll_paper_out()
-        if prev is not None and prev.paper_out and not st.paper_out:
+        if prima_finita and not st.paper_out:
             self._roll_maybe_changed("carta")            # era finita e adesso c'è carta: un rotolo nuovo dentro
         if st.cover_open and (prev is None or not prev.cover_open):
             self._roll_maybe_changed("coperchio")
