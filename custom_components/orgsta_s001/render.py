@@ -6,6 +6,8 @@ label) and rotated to the printer's portrait raster at the end.
 
 from __future__ import annotations
 
+import re
+
 import datetime as dt
 import io
 import json
@@ -46,6 +48,17 @@ PAPERS: dict[str, Paper] = {
     )
 }
 DEFAULT_PAPER = "12x40"
+
+
+def tag_start(paper: Paper) -> int:
+    """Quanto avanzare dopo il buco prima di stampare, per carta (0.5.3). 24 centra la 12x40 (320 righe di etichetta,
+    280 stampate, misurato il 21 ottobre): stesso conto per le altre, metà della differenza col margine della 12x40"""
+    from .protocol import TAG_START
+    m = re.match(r"^(\d+(?:\.\d+)?)x(\d+)", paper.key)
+    if not m or paper.length_px is None:
+        return TAG_START
+    margine = int(m.group(2)) * 8 - paper.length_px
+    return max(0, TAG_START + (margine - 40) // 2)
 
 LAYOUTS = (
     "testo",

@@ -19,7 +19,7 @@ from homeassistant.util import dt as dt_util
 from .const import DEFAULT_DENSITY, DOMAIN
 from .printer import PrinterError, S001Session, check_ready
 from .protocol import TAG_START, JobBuilder, PaperDetails, Status, pack_rows
-from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, to_raster
+from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, tag_start, to_raster
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +79,11 @@ ROLL_COLORS = {"bianco": "#ffffff", "azzurro": "#7fd3ff", "giallo": "#ffe14d", "
 ROLL_KINDS = ("new", "started", "same", "unknown")
 # la carta dei rotoli nuovi comprati da Morgan (colorati e bianchi, 25 ottobre 2026): 14 x 30 mm, 210 etichette
 NEW_ROLL_PAPER = "14x30"
+# i rotoli originali ORGSTA (col tag NFC) di Morgan: bianchi 12 x 40 mm
+ORIGINAL_PAPER = "12x40"
+ORIGINAL_COLOR = "bianco"
+# le letture dello stato dopo l'accensione (secondi): il coperchio aperto e richiuso si vede anche senza stampare
+AUTO_READS = (4, 30, 90)
 
 
 type S001ConfigEntry = ConfigEntry["S001Coordinator"]
@@ -236,6 +241,22 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             self.async_set_updated_data(self.data)
 
     @callback
+    def _original_changed(self, original: bool) -> None:
+        """Il tag è comparso o sparito (0.5.3): col tag è il rotolo originale (bianco, 12x40, quante ne restano non
+        si sa) e non serve chiedere niente; senza tag è uno dei nuovi (14x30) e il colore lo dice qualcuno"""
+        d = self.data
+        if original:
+            _LOGGER.info("S001 %s: rimesso il rotolo originale", self.address)
+            self.async_change_roll(ORIGINAL_COLOR, "unknown", ORIGINAL_PAPER)
+            return
+        _LOGGER.info("S001 %s: tolto il rotolo originale, dentro uno nuovo da %s", self.address, NEW_ROLL_PAPER)
+        self.paper = NEW_ROLL_PAPER
+        if d.roll_color == ORIGINAL_COLOR and not d.roll_counted:
+            d.roll_used = 0
+        self._roll_maybe_changed("tag")
+        self._save_roll()
+
+    @callback
     def _on_paper(self, pd: PaperDetails | None) -> None:
         """Il tag letto: se è diverso dall'ultimo, il rotolo dentro è un altro."""
         if pd is None:
@@ -247,6 +268,10 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         if tag != d.tag:
             _LOGGER.info("S001 %s: tag del rotolo %s", self.address, tag)
         d.tag, d.tag_time = tag, dt_util.utcnow()
+        carta = f"{pd.width}x{pd.length}"
+        if carta in PAPERS and self.paper != carta:            # la misura scritta nel tag vince
+            self.paper = carta
+            d.roll_papers[d.roll_color] = carta
         self._save_roll()
 
     async def _read_tag(self, session: S001Session, builder: JobBuilder) -> None:
@@ -355,17 +380,20 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         )
 
     async def _auto_refresh(self) -> None:
-        """Una lettura sola dopo l'accensione: batteria, coperchio, carta."""
-        await asyncio.sleep(4)
-        if self._lock.locked():
-            return
-        for tentativo in range(2):
+        """Qualche lettura dopo l'accensione (AUTO_READS): batteria, coperchio, carta, tag. Chi cambia il rotolo di
+        solito la accende, apre, cambia e chiude: così il cambio si vede anche senza stampare."""
+        fatto = 0
+        for quando in AUTO_READS:
+            await asyncio.sleep(max(0, quando - fatto))
+            fatto = quando
+            if not self.data.powered:
+                return
+            if self._lock.locked():
+                continue
             try:
                 await self.async_refresh_status()
-                return
             except HomeAssistantError as err:
-                _LOGGER.debug("lettura all'accensione non riuscita (%s): %s", tentativo + 1, err)
-                await asyncio.sleep(20)
+                _LOGGER.debug("lettura dopo l'accensione non riuscita (%ss): %s", quando, err)
 
     async def _async_update_data(self) -> PrinterState:
         """Manual refresh ("Aggiorna stato"): connect, read status, disconnect."""
@@ -387,13 +415,14 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         # originale o no (il tag): ricordato anche da spenta, così un rotolo cambiato a stampante spenta si vede alla
         # prima accensione. Con la carta finita il bit non conta
         if st.paper_loaded and not st.paper_out:
-            if self.data.original is not None and self.data.original != st.valid_paper:
-                self._roll_maybe_changed("tag")
-            if self.data.original != st.valid_paper:
+            prima = self.data.original
+            if prima != st.valid_paper:
                 self.data.original = st.valid_paper
                 if not st.valid_paper:
                     self.data.tag = None
                 self._save_roll()
+            if prima is not None and prima != st.valid_paper:
+                self._original_changed(st.valid_paper)
         self.data.status = st
         self.data.status_time = dt_util.utcnow()
         self.data.reachable = True
@@ -451,7 +480,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         async with self._lock:
             dev = self._ble_device()
             builder = JobBuilder(paper_mode=paper.mode, density=int(density or self.density),
-                                 start=max(0, TAG_START + int(self.offset)))
+                                 start=max(0, tag_start(paper) + int(self.offset)))
             self.data.busy = True
             self.async_set_updated_data(self.data)
             try:
