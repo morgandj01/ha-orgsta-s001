@@ -162,6 +162,12 @@ class RollUsedSensor(S001Entity, SensorEntity):
             "scorte": info["scorte"],
             "iniziati": info["iniziati"],
             "da_confermare": info["da_confermare"],
+            "da_confermare_dal": info["da_confermare_dal"],
+            # 0.5.1: la carta di adesso e di ogni colore, se è un rotolo originale (il tag) e cosa dice il tag
+            "carta": info["carta"],
+            "carte": info["carte"],
+            "originale": info["originale"],
+            "tag": info["tag"],
         }
 
 
