@@ -126,6 +126,19 @@ preview:
 feed:
   fields:
     device_id: *id001
+print_many:
+  fields:
+    device_id: *id001
+    labels:
+      required: true
+      example: '[{"layout": "qr", "title": "Mixer", "qr": "LOCO://T/AB3K9", "copies": 2}]'
+      selector:
+        object: {}
+    density:
+      selector:
+        number:
+          min: 1
+          max: 15
 change_roll:
   fields:
     device_id:

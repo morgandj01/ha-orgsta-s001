@@ -422,6 +422,24 @@
           "description": "Corregge il conto del rotolo dentro"
         }
       }
+    },
+    "print_many": {
+      "name": "Stampa più etichette",
+      "description": "Un giro di stampa intero: con un proxy ESPHome con la coda le tiene lui e le stampa di fila anche se il Wi-Fi cade",
+      "fields": {
+        "device_id": {
+          "name": "Stampante",
+          "description": "Facoltativo se ne hai una sola"
+        },
+        "labels": {
+          "name": "Etichette",
+          "description": "Elenco di etichette, ognuna con gli stessi campi di Stampa (layout, title, qr…) e copies"
+        },
+        "density": {
+          "name": "Intensità",
+          "description": "1-15, più alto = più nero"
+        }
+      }
     }
   }
 }

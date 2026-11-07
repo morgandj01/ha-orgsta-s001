@@ -20,6 +20,7 @@ from .const import (
     ATTR_ALIGN,
     ATTR_COLOR,
     ATTR_KIND,
+    ATTR_LABELS,
     ATTR_BORDER,
     ATTR_COPIES,
     ATTR_DATE,
@@ -41,10 +42,12 @@ from .const import (
     CONF_ADDRESS,
     DOMAIN,
     MAX_COPIES,
+    MAX_LABELS,
     SERVICE_CHANGE_ROLL,
     SERVICE_FEED,
     SERVICE_PREVIEW,
     SERVICE_PRINT,
+    SERVICE_PRINT_MANY,
 )
 from .coordinator import ROLL_COLORS, ROLL_KINDS, S001ConfigEntry, S001Coordinator
 from .render import LAYOUTS, PAPERS, LabelError, LabelSpec
@@ -86,6 +89,19 @@ PRINT_SCHEMA = vol.Schema(
     {
         **LABEL_SCHEMA,
         vol.Optional(ATTR_COPIES, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=MAX_COPIES)),
+        vol.Optional(ATTR_DENSITY): vol.All(vol.Coerce(int), vol.Range(min=1, max=15)),
+    }
+)
+ONE_OF_MANY = vol.Schema(
+    {
+        **{k: v for k, v in LABEL_SCHEMA.items() if str(k) != ATTR_DEVICE_ID},
+        vol.Optional(ATTR_COPIES, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=MAX_COPIES)),
+    }
+)
+PRINT_MANY_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_LABELS): vol.All(cv.ensure_list, [ONE_OF_MANY], vol.Length(min=1, max=MAX_LABELS)),
         vol.Optional(ATTR_DENSITY): vol.All(vol.Coerce(int), vol.Range(min=1, max=15)),
     }
 )
@@ -154,13 +170,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         return await hass.async_add_executor_job(path.read_bytes)
 
     async def _spec(call: ServiceCall, coord: S001Coordinator) -> LabelSpec:
-        d = call.data
+        return await _spec_da(call.data, coord)
+
+    async def _spec_da(d, coord: S001Coordinator) -> LabelSpec:
         image = await _load_image(d[ATTR_IMAGE]) if d.get(ATTR_IMAGE) else None
         extra: dict = {"today": dt_util.now().date()}
         if d.get(ATTR_DATE_PREFIX) is not None:
             extra["date_prefix"] = d[ATTR_DATE_PREFIX]
         return LabelSpec(
-            layout=d[ATTR_LAYOUT],
+            layout=d.get(ATTR_LAYOUT, "testo"),
             title=d.get(ATTR_TITLE, ""),
             subtitle=d.get(ATTR_SUBTITLE, ""),
             icon=d.get(ATTR_ICON),
@@ -170,9 +188,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             ssid=d.get(ATTR_SSID),
             password=d.get(ATTR_PASSWORD),
             image=image,
-            border=d[ATTR_BORDER],
-            invert=d[ATTR_INVERT],
-            align=d[ATTR_ALIGN],
+            border=d.get(ATTR_BORDER, False),
+            invert=d.get(ATTR_INVERT, False),
+            align=d.get(ATTR_ALIGN, "center"),
             paper=d.get(ATTR_PAPER) or coord.paper,
             length_mm=d.get(ATTR_LENGTH_MM),
             extra=extra,
@@ -191,6 +209,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "battery": st.battery if st else None,
         }
 
+    async def handle_print_many(call: ServiceCall) -> ServiceResponse:
+        """Tante etichette in una stampa sola (0.7.0): con un proxy con la coda le tiene lui e le stampa di fila."""
+        coord = _coordinator(call)
+        specs = []
+        for d in call.data[ATTR_LABELS]:
+            spec = await _spec_da(d, coord)
+            specs.append((spec, d[ATTR_COPIES]))
+        try:
+            n = await coord.async_print_many(specs, call.data.get(ATTR_DENSITY))
+        except LabelError as err:
+            raise ServiceValidationError(str(err)) from err
+        st = coord.data.status
+        return {"printed": n, "battery": st.battery if st else None}
+
     async def handle_preview(call: ServiceCall) -> ServiceResponse:
         coord = _coordinator(call)
         spec = await _spec(call, coord)
@@ -205,6 +237,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(
         DOMAIN, SERVICE_PRINT, handle_print, schema=PRINT_SCHEMA, supports_response=SupportsResponse.OPTIONAL
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_PRINT_MANY, handle_print_many, schema=PRINT_MANY_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN, SERVICE_PREVIEW, handle_preview, schema=PREVIEW_SCHEMA, supports_response=SupportsResponse.OPTIONAL

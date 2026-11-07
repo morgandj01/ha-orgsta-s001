@@ -21,6 +21,29 @@ Serve almeno un adattatore Bluetooth o un proxy ESPHome con **connessioni attive
 - Prima di stampare legge lo stato: se il coperchio è aperto o la carta è finita, si ferma e te lo dice
 - Le etichette sono disegnate in orizzontale (il testo corre lungo l'etichetta)
 
+## La coda nei proxy (0.7.0)
+
+Fino alla 0.6 HA mandava la stampa in diretta, un pezzetto da 128 byte alla volta, passando dal Wi-Fi e dal proxy
+Bluetooth: un attimo di Wi-Fi o il proxy impegnato a cercare telefoni e la stampa si fermava a metà (mezza etichetta).
+
+Con il pacchetto `esphome/stampantina.yaml` in un proxy ESPHome, HA consegna **le etichette intere** (compresse con
+zlib, una 12x40 col QR è circa 0,7 KB) al proxy che sente meglio la stampantina, e **il proxy le stampa da solo**:
+collegato a lei col suo `ble_client`, una pagina alla volta, con la risposta di ogni pezzo. Se il collegamento cade, la
+pagina si rifà da capo, mai mezza. Il Wi-Fi può anche cadere: quelle già consegnate escono lo stesso
+
+```yaml
+# nel file del proxy (ESPHome Builder)
+packages:
+  stampantina: github://morgandj01/ha-orgsta-s001/esphome/stampantina.yaml@main
+```
+
+- La coda tiene fino a 64 KB di etichette compresse (un giro di 60-90 col QR) e lascia sempre 36 KB liberi; quando è
+  piena HA aspetta che se ne stampi qualcuna e manda le altre (`memoria_kb`, `libera_kb` in `orgsta_coda`)
+- Usa uno slot Bluetooth in più (`esp32_ble: max_connections: 4`), solo mentre stampa e per 8 secondi dopo
+- Senza proxy con la coda, o se nessuno la raggiunge, si stampa in diretta come prima
+- `orgsta_s001.print_many` stampa un giro intero (`labels:` con i campi di `print` e `copies`) in un lavoro solo
+- Sul proxy: `orgsta_metti`, `orgsta_stato`, `orgsta_annulla` (azioni dell'API con la risposta)
+
 ## Entità
 
 | Entità | Cosa fa |

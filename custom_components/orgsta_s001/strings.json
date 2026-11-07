@@ -422,6 +422,24 @@
           "description": "Corrects the count of the loaded roll"
         }
       }
+    },
+    "print_many": {
+      "name": "Print many labels",
+      "description": "A whole print run: a nearby ESPHome proxy with the queue keeps them and prints them in a row even if Wi-Fi drops",
+      "fields": {
+        "device_id": {
+          "name": "Printer",
+          "description": "Optional when you have only one"
+        },
+        "labels": {
+          "name": "Labels",
+          "description": "List of labels, each with the same fields as Print (layout, title, qr…) and copies"
+        },
+        "density": {
+          "name": "Density",
+          "description": "1-15, higher = darker"
+        }
+      }
     }
   }
 }

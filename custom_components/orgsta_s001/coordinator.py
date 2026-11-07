@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -17,8 +18,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_DENSITY, DOMAIN
+from .ponte import Pagina, Ponte, proxy_con_coda
 from .printer import PrinterError, S001Session, check_ready
-from .protocol import TAG_START, JobBuilder, PaperDetails, Status, pack_rows
+from .protocol import DEFAULT_SPEED, TAG_START, JobBuilder, PaperDetails, Status, pack_rows
 from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, tag_start, to_raster
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,6 +107,9 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.paper_saved: set[str] = set()       # le chiavi già nel registro (la carta c'è dalla 0.5.1)
         self.data = PrinterState()
         self._auto_task: asyncio.Task | None = None
+        # fino a quando un proxy resta collegato alla stampantina dopo una stampa (0.7.0): intanto niente
+        # collegamenti diretti da HA, la stampantina ne accetta uno solo
+        self._ponte_fino = 0.0
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{address.replace(':', '').lower()}")
 
     # ---- rotolo: etichette usate da quando è stato messo, capienza imparata quando finisce ----
@@ -452,6 +457,9 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
 
     async def async_refresh_status(self) -> Status | None:
         async with self._lock:
+            if time.monotonic() < self._ponte_fino:
+                # un proxy è ancora collegato a lei: lo stato è quello che ha appena detto il proxy
+                return self.data.status
             dev = self._ble_device()
             builder = JobBuilder()
             try:
@@ -473,42 +481,97 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         return png
 
     async def async_print(self, spec: LabelSpec, copies: int = 1, density: int | None = None) -> None:
-        paper = PAPERS[spec.paper]
-        landscape = await self.hass.async_add_executor_job(render, spec)
-        png = await self.hass.async_add_executor_job(preview_png, landscape)
-        rows = await self.hass.async_add_executor_job(lambda: pack_rows(to_raster(landscape)))
+        await self.async_print_many([(spec, copies)], density)
+
+    async def async_print_many(self, specs: list[tuple[LabelSpec, int]], density: int | None = None) -> int:
+        """Una o più etichette in una stampa sola (0.7.0). Tutte con la carta della prima. Torna quante ne sono
+        uscite. Prima prova la coda di un proxy ESPHome vicino (ponte.py), se no stampa in diretta come prima."""
+        if not specs:
+            return 0
+        paper = PAPERS[specs[0][0].paper]
+        pagine: list[Pagina] = []
+        for spec, copies in specs:
+            landscape = await self.hass.async_add_executor_job(render, spec)
+            rows = await self.hass.async_add_executor_job(lambda l=landscape: pack_rows(to_raster(l)))
+            pagine.append(Pagina(rows, max(1, int(copies))))
+        last_spec = specs[-1][0]
+        png = await self.hass.async_add_executor_job(
+            preview_png, await self.hass.async_add_executor_job(render, last_spec))
         self.data.preview = png
         self.data.preview_time = dt_util.utcnow()
+        dens = int(density or self.density)
+        start = max(0, tag_start(paper) + int(self.offset))
         async with self._lock:
-            dev = self._ble_device()
-            builder = JobBuilder(paper_mode=paper.mode, density=int(density or self.density),
-                                 start=max(0, tag_start(paper) + int(self.offset)))
             self.data.busy = True
             self.async_set_updated_data(self.data)
             try:
-                async with S001Session(dev, self._on_status) as s:
-                    st = await s.query_status(builder)
-                    check_ready(st)
-                    await self._read_tag(s, builder)
-                    n = max(1, int(copies))
-                    for page in range(n):
-                        await s.send_job(builder.build_page(rows, first=page == 0, last=page == n - 1))
+                uscite = await self._stampa_coda(pagine, paper.mode, dens, start)
+                if uscite is None:
+                    uscite = await self._stampa_diretta(pagine, paper.mode, dens, start)
             except PrinterError as err:
                 self.data.busy = False
                 self._raise(err)
             finally:
                 self.data.busy = False
             self.data.last_print = dt_util.utcnow()
-            self.data.last_text = " / ".join(x for x in (spec.title, spec.subtitle, spec.ssid) if x) or spec.layout
-            self.data.labels_printed += max(1, copies)
-            self.data.roll_used += max(1, copies)
+            self.data.last_text = " / ".join(
+                x for x in (last_spec.title, last_spec.subtitle, last_spec.ssid) if x) or last_spec.layout
+            self.data.labels_printed += uscite
+            self.data.roll_used += uscite
             self._save_roll()
             self.data.last_error = None
             self.async_set_updated_data(self.data)
+            return uscite
+
+    async def _stampa_coda(self, pagine: list[Pagina], mode: str, density: int, start: int) -> int | None:
+        """Col proxy che la sente meglio e ha la coda; un altro se il primo non la raggiunge. None = nessuno."""
+        provati = 0
+        for proxy in proxy_con_coda(self.hass, self.address)[:3]:
+            ponte = Ponte(self.hass, proxy, self._on_status)
+            provati += 1
+            try:
+                _LOGGER.debug("S001 %s: stampa dalla coda di %s (rssi %s)", self.address, proxy.nome, proxy.rssi)
+                uscite = await ponte.stampa(pagine, mode=mode, density=density, speed=DEFAULT_SPEED, start=start)
+            except PrinterError as err:
+                if ponte.consegnate == 0 and err.key == "connect":
+                    _LOGGER.info("S001 %s: %s non ci arriva (%s), provo un altro", self.address, proxy.nome, err)
+                    continue
+                if ponte.fatte:
+                    # quelle già uscite si contano anche se poi si è fermata
+                    self.data.labels_printed += ponte.pagine
+                    self.data.roll_used += ponte.pagine
+                    self._save_roll()
+                raise
+            self._ponte_fino = time.monotonic() + 12
+            self.data.reachable = True
+            return uscite
+        if provati:
+            _LOGGER.info("S001 %s: nessun proxy con la coda la raggiunge, stampo in diretta", self.address)
+        return None
+
+    async def _stampa_diretta(self, pagine: list[Pagina], mode: str, density: int, start: int) -> int:
+        """Com'era fino alla 0.6: HA collegato alla stampantina, pezzo per pezzo."""
+        if time.monotonic() < self._ponte_fino:
+            await asyncio.sleep(max(0.0, self._ponte_fino - time.monotonic()))
+        dev = self._ble_device()
+        builder = JobBuilder(paper_mode=mode, density=density, start=start)
+        n = sum(p.copie for p in pagine)
+        fatte = 0
+        async with S001Session(dev, self._on_status) as s:
+            st = await s.query_status(builder)
+            check_ready(st)
+            await self._read_tag(s, builder)
+            for p in pagine:
+                for _ in range(p.copie):
+                    await s.send_job(builder.build_page(p.rows, first=fatte == 0, last=fatte == n - 1))
+                    fatte += 1
+        return fatte
 
     async def async_feed(self) -> None:
         paper = PAPERS[self.paper]
         async with self._lock:
+            if time.monotonic() < self._ponte_fino:
+                await asyncio.sleep(max(0.0, self._ponte_fino - time.monotonic()))
             dev = self._ble_device()
             builder = JobBuilder(paper_mode=paper.mode)
             try:

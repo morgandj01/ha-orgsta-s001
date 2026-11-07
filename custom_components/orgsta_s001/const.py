@@ -12,6 +12,7 @@ CHAR_FLOW = "0000ff03-0000-1000-8000-00805f9b34fb"
 CONF_ADDRESS = "address"
 
 SERVICE_PRINT = "print"
+SERVICE_PRINT_MANY = "print_many"
 SERVICE_PREVIEW = "preview"
 SERVICE_FEED = "feed"
 SERVICE_CHANGE_ROLL = "change_roll"
@@ -34,9 +35,12 @@ ATTR_BORDER = "border"
 ATTR_INVERT = "invert"
 ATTR_ALIGN = "align"
 ATTR_COPIES = "copies"
+ATTR_LABELS = "labels"
 ATTR_DENSITY = "density"
 ATTR_PAPER = "paper"
 ATTR_LENGTH_MM = "length_mm"
 
 DEFAULT_DENSITY = 9
 MAX_COPIES = 20
+# print_many (0.7.0): un giro di stampa intero, con la coda nel proxy
+MAX_LABELS = 120
