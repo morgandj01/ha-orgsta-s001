@@ -34,13 +34,17 @@ class Paper:
     width_px: int  # across the label (printer head direction)
     length_px: int | None  # along the label; None = continuous
 
+# 0.6.0 (7 novembre, Morgan: «ogni tanto mi stampa un foglio vuoto dopo quello che stampa», col rotolo piccolo):
+# la 14x30 stampava 208 righe su 240 e ne restavano 12 dopo la stampa, contro le 16 della 12x40 che non l'ha mai fatto;
+# se la stampante si fermava un po' più avanti nel buco la stampa finiva nell'etichetta dopo e «vai al buco» la buttava
+# tutta. Ora ogni carta lascia 40 righe (5 mm) come la 12x40: 14x30 → 200, 14x22 → 136
 PAPERS: dict[str, Paper] = {
     p.key: p
     for p in (
         Paper("12x40", "12 x 40 mm", "tag", 80, 280),
         Paper("14x40", "14 x 40 mm", "tag", 88, 280),
-        Paper("14x30", "14 x 30 mm", "tag", 88, 208),
-        Paper("14x22", "14 x 22 mm", "tag", 88, 144),
+        Paper("14x30", "14 x 30 mm", "tag", 88, 200),
+        Paper("14x22", "14 x 22 mm", "tag", 88, 136),
         Paper("14x50", "14 x 50 mm", "tag", 88, 360),
         Paper("12.5x74", "12,5 x 74 mm", "tag", 84, 544),
         Paper("14x40_trasparente", "14 x 40 mm trasparente", "black_tag", 88, 280),
@@ -152,6 +156,69 @@ class LabelSpec:
     extra: dict = field(default_factory=dict)
 
 
+MIN_PX = 9  # sotto (in punti della stampante, 8 al mm) una riga non si legge più
+
+
+def _misura(t: str, bold: bool, size: int) -> tuple[float, float]:
+    """(larghezza, altezza della riga) in punti della stampante"""
+    f = _font(str(FONT_BOLD if bold else FONT_REGULAR), max(1, size) * SS)
+    l, _tp, r, _b = f.getbbox(t)
+    asc, desc = f.getmetrics()
+    return (r - l) / SS, (asc + desc) * 0.92 / SS
+
+
+def _cap(t: str, bold: bool, bw: float, top: int) -> int:
+    """la grandezza più grande che sta nella larghezza (al massimo top)"""
+    lo, hi = 1, max(1, top)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if _misura(t, bold, mid)[0] <= bw:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
+def _adatta(lines, ratios, bw, bh, top, gruppi=None):
+    """Le grandezze delle righe: la base più grande che ci sta in altezza, ogni riga fermata dalla sua larghezza e le
+    normali mai sopra il titolo. Ritorna (punteggio, righe, grandezze) o None. Il punteggio è la riga più piccola
+    rispetto a quanto vorrebbe essere: vince l'impaginazione dove nessuna riga resta schiacciata"""
+    caps = [_cap(t, st == "bold", bw, int(top)) for t, st in lines]
+    for g in set(gruppi or []) - {None}:                   # le due metà di un titolo hanno la stessa grandezza
+        dentro = [i for i, x in enumerate(gruppi) if x == g]
+        caps = [min(caps[j] for j in dentro) if i in dentro else c for i, c in enumerate(caps)]
+    def grandezze(base: int) -> list[int]:
+        out = [min(caps[i], max(1, int(base * r))) for i, r in enumerate(ratios)]
+        bold = [sz for sz, (_, st) in zip(out, lines) if st == "bold"]
+        if bold:
+            tetto = int(min(bold) * 0.92)
+            out = [sz if st == "bold" else min(sz, max(tetto, 1)) for sz, (_, st) in zip(out, lines)]
+        return out
+    for base in range(int(top), 0, -1):
+        sizes = grandezze(base)
+        h = sum(_misura(t, st == "bold", sz)[1] for (t, st), sz in zip(lines, sizes))
+        if h <= bh * 1.04:
+            if min(sizes) < MIN_PX:
+                return None
+            return min(sz / r for sz, r in zip(sizes, ratios)), lines, sizes
+    return None
+
+
+def _varianti(lines, ratios):
+    """com'è, e col titolo lungo diviso in due righe nel punto più vicino a metà"""
+    yield lines, ratios, None
+    for i, (t, st) in enumerate(lines):
+        if st != "bold" or " " not in t.strip():
+            continue
+        parole = t.split()
+        tagli = [(abs(len(" ".join(parole[:k])) - len(" ".join(parole[k:]))), k) for k in range(1, len(parole))]
+        _, k = min(tagli)
+        nuove = lines[:i] + [(" ".join(parole[:k]), st), (" ".join(parole[k:]), st)] + lines[i + 1:]
+        gruppi = [None] * i + [0, 0] + [None] * (len(lines) - i - 1)
+        yield nuove, ratios[:i] + [ratios[i], ratios[i]] + ratios[i + 1:], gruppi
+        break
+
+
 class Canvas:
     """Supersampled landscape canvas in mode L (0 = ink)."""
 
@@ -170,46 +237,40 @@ class Canvas:
         max_size: int | None = None,
         ratios: list[float] | None = None,
     ) -> None:
-        """Fit several lines into box. lines = [(text, 'bold'|'regular')]."""
+        """Fit several lines into box. lines = [(text, 'bold'|'regular')].
+
+        0.6.0 (Morgan, 7 novembre: «le scritte sotto non si vedono, allarga un po' tanto c'è spazio»): ogni riga prende
+        la grandezza che le lascia la sua larghezza, senza dipendere dalle altre (prima tutte scendevano col titolo
+        lungo); le righe normali mai più grandi del titolo; un titolo lungo va su due righe se così viene più grande;
+        sotto MIN_PX una riga non si legge e l'etichetta non si fa"""
         lines = [(t, s) for t, s in lines if t]
         if not lines:
             return
         x0, y0, x1, y1 = box
         bw, bh = x1 - x0, y1 - y0
-        ratios = ratios or [1.0] + [0.62] * (len(lines) - 1)
-        ratios = ratios[: len(lines)]
-        max_size = max_size or bh
+        ratios = list(ratios or [1.0] + [0.62] * (len(lines) - 1))
+        ratios = (ratios + [0.62] * len(lines))[: len(lines)]
         best = None
-        size = max_size
-        while size >= 7:
-            fonts = [
-                _font(str(FONT_BOLD if s == "bold" else FONT_REGULAR), max(6, int(size * r)) * SS)
-                for (_, s), r in zip(lines, ratios)
-            ]
-            metrics = []
-            ok = True
-            total_h = 0
-            for (t, _), f in zip(lines, fonts):
-                l, tp, r, b = f.getbbox(t)
-                asc, desc = f.getmetrics()
-                lh = (asc + desc) * 0.92
-                metrics.append((r - l, lh, l))
-                total_h += lh
-                if (r - l) > bw * SS:
-                    ok = False
-            if ok and total_h <= bh * SS * 1.04:
-                best = (fonts, metrics, total_h)
-                break
-            size -= 1
+        for ls, rs, gr in _varianti(lines, ratios):
+            fit = _adatta(ls, rs, bw, bh, max_size or bh, gr)
+            # il titolo diviso in due solo se viene davvero più grande (10%)
+            if fit is not None and (best is None or fit[0] > best[0] * (1.1 if gr else 1) + 0.01):
+                best = fit
         if best is None:
-            raise LabelError("il testo non ci sta sull'etichetta, accorcialo o vai a capo")
-        fonts, metrics, total_h = best
+            raise LabelError("il testo non ci sta sull'etichetta, accorcialo o togli una riga")
+        _, ls, sizes = best
+        rows = []
+        total_h = 0.0
+        for (t, st), sz in zip(ls, sizes):
+            f = _font(str(FONT_BOLD if st == "bold" else FONT_REGULAR), sz * SS)
+            l, _tp, r, _b = f.getbbox(t)
+            asc, desc = f.getmetrics()
+            lh = (asc + desc) * 0.92
+            rows.append((t, f, r - l, lh, l))
+            total_h += lh
         y = y0 * SS + (bh * SS - total_h) / 2
-        for (t, _), f, (tw, lh, l) in zip(lines, fonts, metrics):
-            if align == "left":
-                x = x0 * SS - l
-            else:
-                x = x0 * SS + (bw * SS - tw) / 2 - l
+        for t, f, tw, lh, l in rows:
+            x = x0 * SS - l if align == "left" else x0 * SS + (bw * SS - tw) / 2 - l
             asc, desc = f.getmetrics()
             self.d.text((x, y + (lh - (asc + desc)) / 2), t, font=f, fill=0)
             y += lh
