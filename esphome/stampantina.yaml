@@ -1,0 +1,64 @@
+# La coda della stampantina ORGSTA S001 dentro un proxy Bluetooth ESPHome (0.7.0).
+#
+# Si aggiunge a un proxy che c'è già, senza toccare il resto (Bermuda, luci, LOCO):
+#
+#   packages:
+#     stampantina: github://morgandj01/ha-orgsta-s001/esphome/stampantina.yaml@main
+#
+# HA (integrazione orgsta_s001) consegna qui le etichette intere con `orgsta_metti` e le guarda con `orgsta_stato`;
+# il proxy le tiene in memoria e le stampa da solo. Il Wi-Fi può anche cadere a metà: la stampa va avanti.
+# La stampante giusta la dice `orgsta_mac` (si cambia con substitutions nel file del proxy).
+
+substitutions:
+  orgsta_mac: "06:03:C5:34:D3:88"
+
+external_components:
+  - source: github://morgandj01/ha-orgsta-s001@main
+    components: [orgsta_coda]
+    refresh: 1h
+
+esp32_ble:
+  # gli slot del proxy (3 se è attivo) più uno per la stampantina
+  max_connections: 4
+
+ble_client:
+  - id: orgsta_ble
+    mac_address: ${orgsta_mac}
+    auto_connect: false
+
+orgsta_coda:
+  id: orgsta
+  ble_client_id: orgsta_ble
+
+api:
+  actions:
+    - action: orgsta_metti
+      variables:
+        lavoro: string
+        indice: int
+        totale: int
+        copie: int
+        modo: int
+        densita: int
+        velocita: int
+        inizio: int
+        righe: int
+        resta: int
+        dati: string
+      then:
+        - api.respond:
+            data: !lambda |-
+              id(orgsta)->metti(lavoro, indice, totale, copie, modo, densita, velocita, inizio, righe, resta, dati, root);
+    - action: orgsta_stato
+      then:
+        - api.respond:
+            data: !lambda |-
+              id(orgsta)->stato(root);
+    - action: orgsta_annulla
+      variables:
+        lavoro: string
+      then:
+        - api.respond:
+            data: !lambda |-
+              id(orgsta)->annulla(lavoro);
+              id(orgsta)->stato(root);
