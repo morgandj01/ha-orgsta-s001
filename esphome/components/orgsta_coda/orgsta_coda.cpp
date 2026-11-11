@@ -6,6 +6,7 @@
 #include <esp_gatt_common_api.h>
 #include <algorithm>
 #include <cstring>
+#include <cstdarg>
 
 #include "esphome/core/application.h"
 #include "esphome/core/alloc_helpers.h"
@@ -156,6 +157,7 @@ void OrgstaCoda::radio_restituita_() {
 }
 
 void OrgstaCoda::errore_(const char *perche) {
+  this->nota_("errore %s (off %u di %u)", perche, (unsigned) this->off_, (unsigned) this->pagina_.size());
   ESP_LOGW(TAG, "lavoro %s fermo: %s (%d/%d etichette, %d pagine)", this->lavoro_.c_str(), perche,
            (int) this->voci_fatte_, (int) this->totale_, (int) this->pagine_fatte_);
   this->errore_txt_ = perche;
@@ -246,6 +248,19 @@ void OrgstaCoda::metti(StringRef lavoro, int32_t indice, int32_t totale, int32_t
   this->stato(root);
 }
 
+void OrgstaCoda::nota_(const char *fmt, ...) {
+  char b[96];
+  int n = snprintf(b, sizeof(b), "%u ", (unsigned) millis());
+  va_list a;
+  va_start(a, fmt);
+  vsnprintf(b + n, sizeof(b) - n, fmt, a);
+  va_end(a);
+  ESP_LOGI(TAG, "%s", b);
+  this->diario_.emplace_back(b);
+  while (this->diario_.size() > 48)
+    this->diario_.pop_front();
+}
+
 void OrgstaCoda::stato(JsonObject root) {
   root["fase"] = nome_fase(this->fase_);
   root["lavoro"] = this->lavoro_;
@@ -267,6 +282,9 @@ void OrgstaCoda::stato(JsonObject root) {
   root["byte_pagina"] = this->byte_pagina_;
   root["rifatte"] = this->rifatte_;
   root["esclusiva"] = this->esclusiva_;
+  JsonArray d = root["diario"].to<JsonArray>();
+  for (auto &s : this->diario_)
+    d.add(s);
   if (!this->st_.empty()) {
     root["st_cmd"] = this->st_cmd_;
     root["st"] = format_hex(this->st_);
@@ -379,7 +397,7 @@ bool OrgstaCoda::scrivi_(const uint8_t *dati, size_t n) {
                                       col_permesso ? ESP_GATT_WRITE_TYPE_NO_RSP : ESP_GATT_WRITE_TYPE_RSP,
                                       ESP_GATT_AUTH_REQ_NONE);
   if (ret != ESP_OK) {
-    ESP_LOGW(TAG, "scrittura rifiutata: %d", ret);
+    this->nota_("scrittura rifiutata %d (%u byte, credito %d)", ret, (unsigned) n, (int) this->credito_);
     return false;
   }
   const uint32_t ora = millis();
@@ -404,7 +422,8 @@ void OrgstaCoda::ricomincia_pagina_() {
     this->errore_("write");
     return;
   }
-  ESP_LOGW(TAG, "pagina %d da rifare (tentativo %d)", (int) this->pagine_fatte_ + 1, (int) this->tentativi_);
+  this->nota_("pagina %d da rifare (tentativo %d, off %u)", (int) this->pagine_fatte_ + 1, (int) this->tentativi_,
+              (unsigned) this->off_);
   this->rifatte_++;
   this->pagina_.clear();
   this->aspetto_risposta_ = false;
@@ -496,6 +515,7 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
     case ESP_GATTC_CFG_MTU_EVT:
       if (param->cfg_mtu.status == ESP_GATT_OK)
         this->mtu_ = param->cfg_mtu.mtu;
+      this->nota_("mtu %u (stato %d)", (unsigned) param->cfg_mtu.mtu, (int) param->cfg_mtu.status);
       break;
     case ESP_GATTC_OPEN_EVT:
       // 0.8.1: pezzi più grandi = meno pause, la testina non si ferma a metà (con mtu 23 un'etichetta da 4 cm sono più
@@ -527,7 +547,7 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       if (param->reg_for_notify.handle == this->h_notifica_) {
         this->pronta_ = param->reg_for_notify.status == ESP_GATT_OK;
         this->node_state = espbt::ClientState::ESTABLISHED;
-        ESP_LOGI(TAG, "collegata alla stampante (mtu %u)", (unsigned) this->mtu_);
+        this->nota_("collegata (mtu %u)", (unsigned) this->mtu_);
       }
       break;
     case ESP_GATTC_NOTIFY_EVT:
@@ -535,6 +555,8 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         this->leggi_notifica_(param->notify.value, param->notify.value_len);
       } else if (this->h_flusso_ && param->notify.handle == this->h_flusso_ && param->notify.value_len >= 2) {
         const uint8_t *v = param->notify.value;
+        this->nota_("ff03 %s (credito %d, off %u)", format_hex(v, param->notify.value_len).c_str(),
+                    (int) this->credito_, (unsigned) this->off_);
         if (v[0] == 0x01) {
           // «01 07» quando il buffer è vuoto (si riparte da lì), «01 01» per ogni pacchetto digerito
           if (v[1] > 1 || this->credito_ < 0)
@@ -554,7 +576,7 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
         break;
       this->aspetto_risposta_ = false;
       if (param->write.status != ESP_GATT_OK) {
-        ESP_LOGW(TAG, "la stampante non ha preso il pezzo (%d)", param->write.status);
+        this->nota_("pezzo non preso (%d)", param->write.status);
         if (this->fase_ == Fase::SCRIVO || this->fase_ == Fase::STATO)
           this->ricomincia_pagina_();
         break;
@@ -563,6 +585,9 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       break;
     case ESP_GATTC_DISCONNECT_EVT:
     case ESP_GATTC_CLOSE_EVT: {
+      if (event == ESP_GATTC_DISCONNECT_EVT)
+        this->nota_("staccata: motivo 0x%x, credito %d, %u/%u byte", (unsigned) param->disconnect.reason,
+                    (int) this->credito_, (unsigned) this->off_, (unsigned) this->pagina_.size());
       bool era = this->pronta_;
       this->pronta_ = false;
       this->credito_ = -1;
@@ -694,9 +719,9 @@ void OrgstaCoda::loop() {
       }
       if (this->off_ >= this->pagina_.size()) {
         this->ms_invio_ = ora - this->t_pagina_;
-        ESP_LOGI(TAG, "pagina mandata: %u byte in %u pezzi, %u ms, pausa più lunga %u ms (mtu %u)",
-                 (unsigned) this->byte_pagina_, (unsigned) this->pezzi_, (unsigned) this->ms_invio_,
-                 (unsigned) this->pausa_max_, (unsigned) this->mtu_);
+        this->nota_("pagina mandata: %u byte, %u pezzi, %u ms, pausa max %u, mtu %u", (unsigned) this->byte_pagina_,
+                    (unsigned) this->pezzi_, (unsigned) this->ms_invio_, (unsigned) this->pausa_max_,
+                    (unsigned) this->mtu_);
         this->primo_ = false;
         this->vista_stampa_ = false;
         this->nuovo_stato_ = false;

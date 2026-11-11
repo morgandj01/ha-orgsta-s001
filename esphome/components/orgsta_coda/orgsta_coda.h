@@ -131,6 +131,9 @@ class OrgstaCoda : public Component, public ble_client::BLEClientNode {
   // 0.9.1 (11 novembre, la spia sull'app originale): su ff03 la stampantina dice quanti pacchetti può ancora prendere
   // («01 07» libera, «01 01» uno in più dopo ogni pacchetto) e quanto può essere grande un pacchetto («02 c0 00» = 192).
   // L'app aspetta sempre il permesso; senza, il buffer trabocca: pezzi, doppioni e inizio rovinato
+  // 0.9.2: diario degli ultimi passi (col Wi-Fi spento non si vede il registro): torna in orgsta_stato
+  void nota_(const char *fmt, ...);
+  std::deque<std::string> diario_;
   int16_t credito_{-1};   // -1 = non ancora detto
   uint16_t pezzo_max_{192};
   uint32_t t_credito_{0};
