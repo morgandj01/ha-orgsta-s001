@@ -32,7 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 AZIONE = "orgsta_metti"
 STATO = "orgsta_stato"
 ANNULLA = "orgsta_annulla"
-CHIAMATA_S = 12.0          # una chiamata all'ESP (consegna di un'etichetta o lo stato)
+CHIAMATA_S = 20.0          # una chiamata all'ESP (consegna di un'etichetta o lo stato)
 PIENA_S = 1.0              # coda piena: si riprova appena se ne stampa una
 GIRO_S = 0.8               # ogni quanto si guarda a che punto è
 PAGINA_S = 60.0            # al massimo per pagina, compreso il collegamento
@@ -204,7 +204,18 @@ class Ponte:
             except (HomeAssistantError, asyncio.TimeoutError, TimeoutError) as err:
                 # il proxy non risponde: se ha già le etichette continua da solo, si aspetta che torni
                 if self.consegnate == 0:
-                    raise PrinterError("connect", f"proxy {self.proxy.nome}: {err}") from err
+                    # 0.8.4: mentre si collega alla stampantina l'ESP risponde tardi, ma l'etichetta l'ha presa (11
+                    # novembre: stampata intera dal frigorifero mentre HA la mandava anche agli altri). Prima di
+                    # passare a un altro proxy gli si chiede se ce l'ha
+                    try:
+                        r = await self._chiama(STATO)
+                    except (HomeAssistantError, asyncio.TimeoutError, TimeoutError):
+                        r = {}
+                    if r.get("lavoro") == self.lavoro and int(r.get("ricevute") or 0) > 0:
+                        i = self.consegnate = int(r.get("ricevute") or 0)
+                        silenzio_da = None
+                        continue
+                    raise PrinterError("connect", f"proxy {self.proxy.nome}: {err or 'non risponde'}") from err
                 silenzio_da = silenzio_da or time.monotonic()
                 if time.monotonic() - silenzio_da > SENZA_RISPOSTA_S:
                     raise PrinterError("write", f"proxy {self.proxy.nome} sparito: {err}") from err
