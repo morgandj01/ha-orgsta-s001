@@ -63,6 +63,45 @@ def _servizio(nodo: str, azione: str) -> str:
     return f"{nodo}_{azione}"
 
 
+
+def _mac_meno(mac: str, n: int) -> str | None:
+    try:
+        v = int(mac.replace(":", ""), 16) - n
+    except ValueError:
+        return None
+    if v < 0:
+        return None
+    h = f"{v:012x}"
+    return ":".join(h[i:i + 2] for i in range(0, 12, 2))
+
+
+def _dispositivi(devreg, source: str) -> list:
+    """I dispositivi di HA che possono essere il proxy con quel MAC Bluetooth."""
+    out, visti = [], set()
+    prove = [(dr.CONNECTION_BLUETOOTH, source), (dr.CONNECTION_NETWORK_MAC, source)]
+    wifi = _mac_meno(source, 2)
+    if wifi:
+        prove.append((dr.CONNECTION_NETWORK_MAC, wifi))
+    for kind, mac in prove:
+        for m in (mac.lower(), mac.upper()):
+            dev = devreg.async_get_device(connections={(kind, m)})
+            if dev and dev.id not in visti:
+                visti.add(dev.id)
+                out.append(dev)
+    return out
+
+
+def _nodo_con_coda(hass: HomeAssistant, dev) -> str | None:
+    for eid in dev.config_entries:
+        entry = hass.config_entries.async_get_entry(eid)
+        if entry is None or entry.domain != "esphome":
+            continue
+        nome = entry.data.get("device_name") or dev.name or ""
+        nodo = nome.replace("-", "_").lower()
+        if nodo and hass.services.has_service("esphome", _servizio(nodo, AZIONE)):
+            return nodo
+    return None
+
 def proxy_con_coda(hass: HomeAssistant, address: str) -> list[Proxy]:
     """I proxy che sentono la stampantina e hanno la coda, dal più vicino (RSSI migliore)."""
     devreg = dr.async_get(hass)
@@ -76,24 +115,17 @@ def proxy_con_coda(hass: HomeAssistant, address: str) -> list[Proxy]:
         rssi = getattr(s.advertisement, "rssi", None)
         if not source or rssi is None or rssi < RSSI_MIN:
             continue
-        dev = None
-        for kind in (dr.CONNECTION_BLUETOOTH, dr.CONNECTION_NETWORK_MAC):
-            dev = devreg.async_get_device(connections={(kind, source.lower())}) or devreg.async_get_device(
-                connections={(kind, source.upper())}
-            )
-            if dev:
+        # 0.8.2: la sorgente è il MAC Bluetooth del proxy. Quel MAC in HA è spesso un dispositivo dell'integrazione
+        # bluetooth (non esphome), e il dispositivo ESPHome ha il MAC del Wi-Fi, che sull'ESP32 è quello Bluetooth
+        # meno 2. Si guardano tutti e tre e vale il primo che è di ESPHome e ha la coda
+        for dev in _dispositivi(devreg, source):
+            nodo = _nodo_con_coda(hass, dev)
+            if nodo:
                 break
-        if dev is None:
+        else:
             continue
-        for eid in dev.config_entries:
-            entry = hass.config_entries.async_get_entry(eid)
-            if entry is None or entry.domain != "esphome":
-                continue
-            nome = entry.data.get("device_name") or dev.name or ""
-            nodo = nome.replace("-", "_")
-            if not nodo or not hass.services.has_service("esphome", _servizio(nodo, AZIONE)):
-                continue
-            p = Proxy(nodo, dev.name_by_user or dev.name or nome, int(rssi))
+        if nodo:
+            p = Proxy(nodo, dev.name_by_user or dev.name or nodo, int(rssi))
             if nodo not in visti or visti[nodo].rssi < p.rssi:
                 visti[nodo] = p
     return sorted(visti.values(), key=lambda p: -p.rssi)
