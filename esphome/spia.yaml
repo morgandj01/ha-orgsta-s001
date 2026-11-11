@@ -39,6 +39,26 @@ ble_client:
       - logger.log:
           level: INFO
           format: "spia: collegata alla stampantina vera"
+      - delay: 1500ms
+      - lambda: |-
+          // tutti i servizi e le caratteristiche della vera, per sapere dove scrive l'app
+          uint16_t n = 0;
+          auto gif = (esp_gatt_if_t) id(vera)->get_gattc_if();
+          auto cid = id(vera)->get_conn_id();
+          esp_ble_gattc_get_attr_count(gif, cid, ESP_GATT_DB_ALL, 1, 0xFFFF, 0, &n);
+          ESP_LOGI("spia", "GATT della vera: %u attributi", (unsigned) n);
+          if (n == 0 || n > 120) return;
+          std::vector<esp_gattc_db_elem_t> db(n);
+          uint16_t c = n;
+          if (esp_ble_gattc_get_db(gif, cid, 1, 0xFFFF, db.data(), &c) != ESP_OK) return;
+          for (uint16_t i = 0; i < c; i++) {
+            auto &e = db[i];
+            char u[40];
+            if (e.uuid.len == ESP_UUID_LEN_16) snprintf(u, sizeof(u), "%04x", e.uuid.uuid.uuid16);
+            else if (e.uuid.len == ESP_UUID_LEN_32) snprintf(u, sizeof(u), "%08x", (unsigned) e.uuid.uuid.uuid32);
+            else { std::string s = format_hex(std::vector<uint8_t>(e.uuid.uuid.uuid128, e.uuid.uuid.uuid128 + 16)); snprintf(u, sizeof(u), "%s", s.c_str()); }
+            ESP_LOGI("spia", "GATT tipo %d handle %u uuid %s prop 0x%02x", (int) e.type, (unsigned) e.attribute_handle, u, (unsigned) e.properties);
+          }
     on_disconnect:
       - logger.log:
           level: INFO
