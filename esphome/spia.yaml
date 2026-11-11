@@ -1,0 +1,124 @@
+# La spia della stampantina (11 novembre, prova di Morgan): un proxy fa finta di essere la S001 per l'app originale e
+# gira tutto alla stampantina vera, scrivendo nel registro ogni pacchetto nei due versi coi millisecondi. Così si vede
+# esattamente come stampa l'app (tempi, pezzi, comandi) e si rifà uguale.
+#
+# Al posto della coda (stampantina.yaml) e del bluetooth_proxy, solo per la prova:
+#
+#   packages:
+#     spia: github://morgandj01/ha-orgsta-s001/esphome/spia.yaml@main
+#
+# L'app vede «S001» (nome e dati del costruttore come la vera); la vera, collegata a questo ESP, non si fa più vedere.
+# Il registro si legge dall'ESPHome Builder (Logs): righe «app→» e «→app» in esadecimale.
+
+substitutions:
+  orgsta_mac: "06:03:C5:34:D3:88"
+
+logger:
+  level: INFO
+  tx_buffer_size: 2048
+  logs:
+    esp32_ble_tracker: WARN
+    ble_client: WARN
+    esp32_ble_server: WARN
+
+esp32_ble:
+  name: "S001"
+  max_connections: 3
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+    interval: 320ms
+    window: 300ms
+
+ble_client:
+  - id: vera
+    mac_address: ${orgsta_mac}
+    auto_connect: true
+    on_connect:
+      - logger.log:
+          level: INFO
+          format: "spia: collegata alla stampantina vera"
+    on_disconnect:
+      - logger.log:
+          level: INFO
+          format: "spia: staccata dalla stampantina vera"
+
+esp32_ble_server:
+  manufacturer_data: [0x00, 0x00, 0x06, 0x03, 0xC5, 0x34, 0xD3, 0x88]
+  on_connect:
+    - logger.log:
+        level: INFO
+        format: "spia: l'app si è collegata"
+  on_disconnect:
+    - logger.log:
+        level: INFO
+        format: "spia: l'app si è staccata"
+  services:
+    - uuid: 0xFF00
+      advertise: true
+      characteristics:
+        - id: finta_ff01
+          uuid: 0xFF01
+          read: true
+          notify: true
+        - id: finta_ff02
+          uuid: 0xFF02
+          write: true
+          write_no_response: true
+          on_write:
+            then:
+              - lambda: |-
+                  ESP_LOGI("spia", "%u app→ff02 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
+              - ble_client.ble_write:
+                  id: vera
+                  service_uuid: FF00
+                  characteristic_uuid: FF02
+                  value: !lambda return x;
+        - id: finta_ff03
+          uuid: 0xFF03
+          read: true
+          write: true
+          write_no_response: true
+          notify: true
+          on_write:
+            then:
+              - lambda: |-
+                  ESP_LOGI("spia", "%u app→ff03 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
+              - ble_client.ble_write:
+                  id: vera
+                  service_uuid: FF00
+                  characteristic_uuid: FF03
+                  value: !lambda return x;
+
+sensor:
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: vera
+    id: vera_ff01
+    internal: true
+    service_uuid: FF00
+    characteristic_uuid: FF01
+    notify: true
+    update_interval: never
+    lambda: |-
+      ESP_LOGI("spia", "%u →app ff01 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
+      std::vector<uint8_t> v(x.begin(), x.end());
+      id(finta_ff01)->set_value(std::move(v));
+      id(finta_ff01)->notify();
+      return NAN;
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: vera
+    id: vera_ff03
+    internal: true
+    service_uuid: FF00
+    characteristic_uuid: FF03
+    notify: true
+    update_interval: never
+    lambda: |-
+      ESP_LOGI("spia", "%u →app ff03 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
+      std::vector<uint8_t> v(x.begin(), x.end());
+      id(finta_ff03)->set_value(std::move(v));
+      id(finta_ff03)->notify();
+      return NAN;
