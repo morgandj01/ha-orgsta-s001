@@ -84,7 +84,7 @@ LABEL_SCHEMA = {
     vol.Optional(ATTR_SSID): cv.string,
     vol.Optional(ATTR_PASSWORD): cv.string,
     vol.Optional(ATTR_IMAGE): cv.string,
-    vol.Optional(ATTR_BORDER, default=False): cv.boolean,
+    vol.Optional(ATTR_BORDER): cv.boolean,   # 0.10.0: senza, il rettangolo c'è sul rotolo continuo
     vol.Optional(ATTR_INVERT, default=False): cv.boolean,
     vol.Optional(ATTR_ALIGN, default="center"): vol.In(["center", "left"]),
     vol.Optional(ATTR_PAPER): vol.In(list(PAPERS)),
@@ -199,7 +199,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             ssid=d.get(ATTR_SSID),
             password=d.get(ATTR_PASSWORD),
             image=image,
-            border=d.get(ATTR_BORDER, False),
+            border=d.get(ATTR_BORDER),
             invert=d.get(ATTR_INVERT, False),
             align=d.get(ATTR_ALIGN, "center"),
             paper=d.get(ATTR_PAPER) or coord.paper,

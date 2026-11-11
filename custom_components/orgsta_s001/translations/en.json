@@ -199,7 +199,9 @@
         "cavo": "Cable flag",
         "wifi": "Wi-Fi (QR)",
         "data": "Date",
-        "immagine": "Image"
+        "immagine": "Image",
+        "nastrino": "Bag closing strip (date)",
+        "solo_qr": "QR only"
       }
     },
     "paper": {

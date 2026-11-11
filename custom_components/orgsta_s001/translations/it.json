@@ -199,7 +199,9 @@
         "cavo": "Bandierina cavo",
         "wifi": "Wi-Fi (QR)",
         "data": "Data",
-        "immagine": "Immagine"
+        "immagine": "Immagine",
+        "nastrino": "Nastrino del sacchetto (data)",
+        "solo_qr": "Solo il QR"
       }
     },
     "paper": {

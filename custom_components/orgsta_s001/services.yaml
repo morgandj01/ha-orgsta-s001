@@ -18,6 +18,8 @@ print:
           - wifi
           - data
           - immagine
+          - nastrino
+          - solo_qr
           translation_key: layout
     title: &id003
       example: Caffè
