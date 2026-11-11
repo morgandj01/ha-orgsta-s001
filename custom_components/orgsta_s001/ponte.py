@@ -203,16 +203,13 @@ class Ponte:
                 silenzio_da = None
             except (HomeAssistantError, asyncio.TimeoutError, TimeoutError) as err:
                 # il proxy non risponde: se ha già le etichette continua da solo, si aspetta che torni
-                if self.consegnate == 0:
-                    # 0.8.4: mentre si collega alla stampantina l'ESP risponde tardi, ma l'etichetta l'ha presa (11
-                    # novembre: stampata intera dal frigorifero mentre HA la mandava anche agli altri). Prima di
-                    # passare a un altro proxy gli si chiede se ce l'ha
-                    try:
-                        r = await self._chiama(STATO)
-                    except (HomeAssistantError, asyncio.TimeoutError, TimeoutError):
-                        r = {}
-                    if r.get("lavoro") == self.lavoro and int(r.get("ricevute") or 0) > 0:
-                        i = self.consegnate = int(r.get("ricevute") or 0)
+                if self.consegnate == 0 and i < totale:
+                    # 0.8.5: mentre si collega e stampa l'ESP può non rispondere per decine di secondi, ma l'etichetta
+                    # l'ha presa (11 novembre: stampate intere dal frigorifero mentre HA le mandava anche agli altri).
+                    # Mai a un altro proxy finché questo non dice che non ce l'ha: si aspetta lo stato
+                    forse = await self._aspetta_stato()
+                    if forse.get("lavoro") == self.lavoro and int(forse.get("ricevute") or 0) > 0:
+                        i = self.consegnate = int(forse.get("ricevute") or 0)
                         silenzio_da = None
                         continue
                     raise PrinterError("connect", f"proxy {self.proxy.nome}: {err or 'non risponde'}") from err
@@ -250,6 +247,16 @@ class Ponte:
             if fase == "errore":
                 raise self._errore(r)
             await asyncio.sleep(GIRO_S)
+
+    async def _aspetta_stato(self) -> dict:
+        """Lo stato del proxy, aspettando finché risponde (al massimo SENZA_RISPOSTA_S); {} se non risponde"""
+        fino = time.monotonic() + SENZA_RISPOSTA_S
+        while time.monotonic() < fino:
+            try:
+                return await self._chiama(STATO)
+            except (HomeAssistantError, asyncio.TimeoutError, TimeoutError):
+                await asyncio.sleep(2)
+        return {}
 
     async def annulla(self) -> None:
         try:
