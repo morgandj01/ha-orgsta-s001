@@ -18,8 +18,11 @@ _LOGGER = logging.getLogger(__name__)
 STATUS_TIMEOUT = 6.0
 PAPER_TIMEOUT = 3.0
 COMPLETION_TIMEOUT = 40.0
-MAX_CHUNK = 128
+MAX_CHUNK = 192           # 0.9.5: come l'app originale e «02 c0 00» della stampantina
 CHUNK_DELAY = 0.02
+IN_FLIGHT_MAX = 2         # 0.9.5: mai più di 2 pacchetti senza il «01 01» di ff03 (come l'app)
+CREDIT_GAP = 0.025
+CREDIT_WAIT = 30.0        # col buffer pieno la stampantina tace anche secondi mentre stampa
 
 
 class PrinterError(Exception):
@@ -48,6 +51,12 @@ class S001Session:
         self._done = asyncio.Event()
         self._paper_event = asyncio.Event()
         self.paper: PaperDetails | None = None
+        # 0.9.5 (spia dell'11 novembre): il permesso di ff03. «01 n»: n pacchetti digeriti (07 = buffer vuoto),
+        # «02 lo hi»: pacchetto massimo. Senza, il buffer trabocca: etichette a pezzi e stampantina che si spegne
+        self._credit: int | None = None
+        self._in_flight = 0
+        self._max_packet = MAX_CHUNK
+        self._credit_event = asyncio.Event()
 
     # ---- notifications ----
     def _notify(self, _char, data: bytearray) -> None:
@@ -70,6 +79,20 @@ class S001Session:
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("status callback failed")
 
+    def _flow(self, _char, data: bytearray) -> None:
+        if len(data) >= 2 and data[0] == 0x01:
+            n = data[1]
+            if n > 1 or self._credit is None:
+                self._credit, self._in_flight = n, 0
+            else:
+                self._credit = min(self._credit + n, 16)
+                self._in_flight = max(0, self._in_flight - n)
+            self._credit_event.set()
+        elif len(data) >= 3 and data[0] == 0x02:
+            m = data[1] | (data[2] << 8)
+            if m >= 20:
+                self._max_packet = min(MAX_CHUNK, m)
+
     async def __aenter__(self) -> "S001Session":
         try:
             self._client = await establish_connection(
@@ -80,7 +103,7 @@ class S001Session:
             )
             await self._client.start_notify(CHAR_NOTIFY, self._notify)
             try:
-                await self._client.start_notify(CHAR_FLOW, lambda *_: None)
+                await self._client.start_notify(CHAR_FLOW, self._flow)
             except BleakError:
                 pass
         except (BleakError, TimeoutError, asyncio.TimeoutError) as err:
@@ -102,14 +125,41 @@ class S001Session:
     @property
     def mtu_chunk(self) -> int:
         mtu = getattr(self._client, "mtu_size", 23) or 23
-        return max(20, min(MAX_CHUNK, mtu - 3))
+        return max(20, min(self._max_packet, mtu - 3))
+
+    async def _wait_credit(self) -> None:
+        """Il permesso di ff03: arriva qualche secondo dopo il collegamento, poi un «01 01» per pacchetto"""
+        fino = asyncio.get_running_loop().time() + CREDIT_WAIT
+        while self._credit is None or self._credit <= 0 or self._in_flight >= IN_FLIGHT_MAX:
+            resta = fino - asyncio.get_running_loop().time()
+            if resta <= 0:
+                if self._credit is None:
+                    return                  # stampantina che non lo manda: si va come prima
+                raise PrinterError("write", "nessun permesso dalla stampante")
+            self._credit_event.clear()
+            try:
+                await asyncio.wait_for(self._credit_event.wait(), min(resta, 10.0 if self._credit is None else resta))
+            except (TimeoutError, asyncio.TimeoutError):
+                if self._credit is None:
+                    return
 
     async def _write(self, data: bytes) -> None:
         assert self._client is not None
-        size = self.mtu_chunk
-        for off in range(0, len(data), size):
-            await self._client.write_gatt_char(CHAR_WRITE, data[off : off + size], response=True)
-            await asyncio.sleep(CHUNK_DELAY)
+        if self._credit is None:
+            await self._wait_credit()       # la prima volta: il permesso arriva ~5 s dopo il collegamento
+        off = 0
+        while off < len(data):
+            pezzo = data[off : off + self.mtu_chunk]
+            if self._credit is not None:
+                await self._wait_credit()
+                await self._client.write_gatt_char(CHAR_WRITE, pezzo, response=False)
+                self._credit -= 1
+                self._in_flight += 1
+                await asyncio.sleep(CREDIT_GAP)
+            else:
+                await self._client.write_gatt_char(CHAR_WRITE, pezzo, response=True)
+                await asyncio.sleep(CHUNK_DELAY)
+            off += len(pezzo)
 
     async def query_status(self, builder: JobBuilder) -> Status | None:
         self._status_event.clear()

@@ -22,7 +22,7 @@ INTEGRITY_SEED = 0x12345678
 HEAD_WIDTH = 96
 ROW_BYTES = HEAD_WIDTH // 8
 RASTER_LEFT_PADDING = 6
-ROWS_PER_SLICE = 4
+ROWS_PER_SLICE = 24   # 0.9.5: come l'app originale (era 4)
 DEFAULT_SPEED = 25
 DEFAULT_DENSITY = 9
 # carta a etichette: quanto avanza dopo il buco prima di stampare. Era 2 e l'etichetta 12x40 (280 righe su circa 320)
