@@ -120,6 +120,9 @@
       },
       "stock_rosa": {
         "name": "Scorta rosa"
+      },
+      "stock_continuo": {
+        "name": "Scorta continuo"
       }
     },
     "select": {
@@ -142,7 +145,8 @@
           "bianco": "Bianco",
           "azzurro": "Azzurro",
           "giallo": "Giallo",
-          "rosa": "Rosa"
+          "rosa": "Rosa",
+          "continuo": "Bianco continuo"
         }
       }
     },
@@ -218,7 +222,8 @@
         "bianco": "Bianco",
         "azzurro": "Azzurro",
         "giallo": "Giallo",
-        "rosa": "Rosa"
+        "rosa": "Rosa",
+          "continuo": "Bianco continuo"
       }
     },
     "roll_kind": {

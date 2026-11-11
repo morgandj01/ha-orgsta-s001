@@ -6,6 +6,7 @@ label) and rotated to the printer's portrait raster at the end.
 
 from __future__ import annotations
 
+import math
 import re
 
 import datetime as dt
@@ -152,7 +153,14 @@ class LabelSpec:
     invert: bool = False
     align: str = "center"  # center | left
     paper: str = DEFAULT_PAPER
-    length_mm: float | None = None  # continuous paper only
+    length_mm: float | None = None  # continuous paper only (the cable: the whole flag)
+    # 0.8.0 (11 novembre, rotolo continuo): la lunghezza giusta per il testo a scatti di `length_step` mm, dentro
+    # `length_min`/`length_max` (per il cavo: per lato); il cavo a bandiera col diametro esterno; il segno NFC
+    length_step: float | None = None
+    length_min: float | None = None
+    length_max: float | None = None
+    diameter_mm: float | None = None
+    nfc: bool = False
     extra: dict = field(default_factory=dict)
 
 
@@ -371,7 +379,39 @@ def _length_for(spec: LabelSpec, paper: Paper, natural: int) -> int:
         return paper.length_px
     if spec.length_mm:
         return max(64, int(round(spec.length_mm * 8)))
-    return max(120, natural)
+    return _a_scatti(spec, natural, 120)
+
+
+def _a_scatti(spec: LabelSpec, natural: float, minimo: int) -> int:
+    """La lunghezza naturale (punti) arrotondata per eccesso allo scatto e dentro minimo e massimo (0.8.0)"""
+    n = float(natural)
+    if spec.length_step:
+        passo = float(spec.length_step) * 8
+        n = math.ceil(n / passo - 1e-6) * passo
+    if spec.length_min:
+        n = max(n, float(spec.length_min) * 8)
+    if spec.length_max:
+        n = min(n, float(spec.length_max) * 8)
+    return max(minimo, int(round(n)))
+
+
+def larghezza_naturale(lines: list[tuple[str, str]], ratios: list[float], bh: int) -> float:
+    """Quanto è lungo il testo scritto più grande che sta nell'altezza (0.8.0: sul continuo la lunghezza la decide il
+    testo vero, non più «26 punti a lettera»)"""
+    lines = [(t, st) for t, st in lines if t]
+    if not lines:
+        return 0.0
+    ratios = (list(ratios) + [0.62] * len(lines))[: len(lines)]
+    fit = _adatta(lines, ratios, 100000, bh, bh)
+    if fit is None:
+        return 0.0
+    _, ls, sizes = fit
+    return max(_misura(t, st == "bold", sz)[0] for (t, st), sz in zip(ls, sizes))
+
+
+def giro_px(diametro_mm: float) -> int:
+    """Il pezzo che si avvolge intorno al cavo: la circonferenza più 2 mm (0.8.0)"""
+    return int(round((math.pi * float(diametro_mm) + 2.0) * 8))
 
 
 def render(spec: LabelSpec) -> Image.Image:
@@ -383,15 +423,7 @@ def render(spec: LabelSpec) -> Image.Image:
     if layout not in LAYOUTS:
         raise LabelError(f"layout sconosciuto: {layout}")
     H = paper.width_px
-    natural = 280
-    if paper.length_px is None:
-        # continuous paper: estimate a length from the text
-        chars = max(len(spec.title or ""), len(spec.subtitle or "")) or 8
-        natural = 40 + chars * 26 + (H if (spec.icon or spec.qr or layout in ("qr", "wifi", "icona")) else 0)
-    W = _length_for(spec, paper, natural)
-    c = Canvas(W, H)
     m = 6 if not spec.border else 9  # margin
-    inner = (m, m, W - m, H - m)
     title, sub = (spec.title or "").strip(), (spec.subtitle or "").strip()
     icon = spec.icon or LAYOUT_DEFAULT_ICON.get(layout)
 
@@ -403,6 +435,19 @@ def render(spec: LabelSpec) -> Image.Image:
     def ratios(n_title: int, n_sub: int) -> list[float]:
         return [1.0] * n_title + [0.62] * n_sub
 
+    nfc_w = int(round((H - 2 * m) * 0.62)) + 6 if spec.nfc else 0
+    if layout == "cavo" and spec.diameter_mm:
+        return _cavo_bandiera(spec, paper, H, m, lines_of(title, sub), ratios, nfc_w)
+    if layout == "cavo":
+        nfc_w = 0                            # le due metà di prima: il segno NFC non ha posto
+    natural = 280
+    if paper.length_px is None:
+        natural = _naturale(spec, layout, H, m, lines_of, ratios, icon) + nfc_w
+    W = _length_for(spec, paper, natural)
+    c = Canvas(W, H)
+    R = W - m - nfc_w                        # dove finisce il contenuto: dopo c'è il segno NFC
+    inner = (m, m, R, H - m)
+
     def with_side(side_draw, text_lines):
         side = H - 2 * m
         side_box = (m, m, m + side, H - m)
@@ -410,7 +455,7 @@ def render(spec: LabelSpec) -> Image.Image:
         tx0 = m + side + 8
         if text_lines:
             nt = sum(1 for _, s in text_lines if s == "bold")
-            c.text_block(text_lines, (tx0, m, W - m, H - m), align=spec.align if spec.align else "left", ratios=ratios(nt, len(text_lines) - nt))
+            c.text_block(text_lines, (tx0, m, R, H - m), align=spec.align if spec.align else "left", ratios=ratios(nt, len(text_lines) - nt))
 
     if layout == "testo":
         tl = lines_of(title, sub)
@@ -452,7 +497,7 @@ def render(spec: LabelSpec) -> Image.Image:
     elif layout == "cavo":
         if not title:
             raise LabelError("serve il nome del cavo")
-        half = W // 2
+        half = W // 2                      # senza diametro: le due metà di prima (carta a etichette)
         c.vline_dashed(half, 4, H - 4)
         tl = lines_of(title, sub)
         nt = sum(1 for _, s in tl if s == "bold")
@@ -493,10 +538,116 @@ def render(spec: LabelSpec) -> Image.Image:
             side = H - 2 * m
             c.picture(spec.image, (m, m, m + side, H - m))
             nt = sum(1 for _, s in tl if s == "bold")
-            c.text_block(tl, (m + side + 8, m, W - m, H - m), align="left", ratios=ratios(nt, len(tl) - nt))
+            c.text_block(tl, (m + side + 8, m, R, H - m), align="left", ratios=ratios(nt, len(tl) - nt))
         else:
-            c.picture(spec.image, (2, 2, W - 2, H - 2))
+            c.picture(spec.image, (2, 2, R + m - 2, H - 2))
 
+    if nfc_w:
+        _segno_nfc(c, W - m - nfc_w + 6, m, W - m, H - m)
+    if spec.border:
+        c.border()
+    return c.finish(spec.invert)
+
+
+def _naturale(spec: LabelSpec, layout: str, H: int, m: int, lines_of, ratios, icon) -> float:
+    """La lunghezza naturale sul continuo (punti), dal testo vero (0.8.0)"""
+    bh = H - 2 * m
+    side = bh + 8                                    # il quadrato dell'icona o del QR e lo spazio dopo
+    title, sub = (spec.title or "").strip(), (spec.subtitle or "").strip()
+
+    def testo(lines) -> float:
+        nt = sum(1 for _, s in lines if s == "bold")
+        return larghezza_naturale(lines, ratios(nt, len(lines) - nt), bh)
+
+    tl = lines_of(title, sub)
+    if layout == "testo":
+        return 2 * m + testo(tl) + (side if spec.icon else 0) + 4
+    if layout in ("icona", "qr"):
+        return 2 * m + (side + testo(tl) + 4 if tl else bh)
+    if layout in ("dispensa", "congelatore"):
+        d = parse_date(spec.date, spec.extra.get("today"))
+        prefix = spec.extra.get("date_prefix") or ("Congelato" if layout == "congelatore" else "")
+        righe = [(title, "bold"), (f"{prefix} {fmt_date(d)}".strip(), "regular")]
+        if spec.expiry not in (None, ""):
+            righe.append((f"Scade {fmt_date(parse_date(spec.expiry, spec.extra.get('today')))}", "regular"))
+        if sub:
+            righe.append((sub, "regular"))
+        return 2 * m + side + testo(righe) + 4
+    if layout == "wifi":
+        righe = [(spec.ssid or "", "bold")] + ([(spec.password, "regular")] if spec.password else [])
+        return 2 * m + side + testo(righe) + 4
+    if layout == "data":
+        righe = ([(title, "bold")] if title else []) + [(fmt_date(parse_date(spec.date, spec.extra.get("today"))),
+                                                          "bold")] + ([(sub, "regular")] if sub else [])
+        return 2 * m + side + testo(righe) + 4
+    if layout == "immagine":
+        if tl:
+            return 2 * m + side + testo(tl) + 4
+        if spec.image:
+            try:
+                im = Image.open(io.BytesIO(spec.image))
+                return 4 + (H - 4) * im.width / max(1, im.height)
+            except Exception:  # noqa: BLE001 - il disegno dirà che non si legge
+                pass
+        return 280
+    if layout == "cavo":
+        return 2 * (2 * m + testo(tl) + (side if spec.icon else 0) + 4)
+    return 280
+
+
+def _segno_nfc(c: "Canvas", x0: int, y0: int, x1: int, y1: int) -> None:
+    """Il segno NFC in fondo: qui c'è un tag da avvicinare al telefono (0.8.0)"""
+    c.icon("nfc-variant", (x0, y0, x1, y1))
+
+
+def _cavo_lato(spec: LabelSpec, w: int, h: int, tl, ratios, nfc_w: int) -> Image.Image:
+    """Un lato della bandiera: QR (se c'è), icona (se chiesta), testo, segno NFC. Supersampled, 0 = inchiostro"""
+    sub_c = Canvas(w, h)
+    x = 0
+    if spec.qr:
+        sub_c.qr(spec.qr, (x - 2, -3, x + h + 1, h + 3))
+        x += h + 6
+    elif spec.icon:
+        sub_c.icon(spec.icon, (x, 0, x + h, h))
+        x += h + 4
+    fine = w - nfc_w
+    if tl:
+        nt = sum(1 for _, s in tl if s == "bold")
+        sub_c.text_block(tl, (x, 0, fine, h), align="left" if x else "center", ratios=ratios(nt, len(tl) - nt))
+    if nfc_w:
+        _segno_nfc(sub_c, w - nfc_w + 6, 0, w, h)
+    return sub_c.img
+
+
+def _cavo_bandiera(spec: LabelSpec, paper: Paper, H: int, m: int, tl, ratios, nfc_w: int) -> Image.Image:
+    """Il cavo a bandiera (0.8.0, Morgan: «ogni cavo avrà la dimensione del diametro esterno, lascia lo spazio in mezzo
+    e scrive sui due lati, qr e tutto il resto»): lato A · giro del cavo · lato B capovolto. Si avvolge il giro e si
+    incollano A e B schiena contro schiena: da tutti e due i lati si legge dritto"""
+    if not tl and not spec.qr:
+        raise LabelError("serve il nome del cavo")
+    giro = giro_px(spec.diameter_mm)
+    bh = H - 2 * m
+    if paper.length_px:
+        lato = (paper.length_px - giro) // 2
+        if lato < bh + 2 * m:
+            raise LabelError("il cavo è troppo grosso per questa etichetta: serve il rotolo continuo")
+    elif spec.length_mm:
+        lato = max(int(round((float(spec.length_mm) * 8 - giro) / 2)), 2 * m + bh // 2)
+    else:
+        nt = sum(1 for _, s in tl if s == "bold")
+        nat = 2 * m + larghezza_naturale(tl, ratios(nt, len(tl) - nt), bh) + 4
+        if spec.qr:
+            nat += bh + 6
+        elif spec.icon:
+            nat += bh + 4
+        lato = _a_scatti(spec, nat + nfc_w, 2 * m + bh)
+    W = 2 * lato + giro
+    c = Canvas(W, H)
+    pezzo = _cavo_lato(spec, lato - 2 * m, bh, tl, ratios, nfc_w)
+    c.img.paste(pezzo, (m * SS, m * SS))
+    c.img.paste(pezzo.rotate(180), ((lato + giro + m) * SS, m * SS))
+    c.vline_dashed(lato, 4, H - 4)
+    c.vline_dashed(lato + giro, 4, H - 4)
     if spec.border:
         c.border()
     return c.finish(spec.invert)

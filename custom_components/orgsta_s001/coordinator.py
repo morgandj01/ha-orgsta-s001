@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util
 from .const import DEFAULT_DENSITY, DOMAIN
 from .ponte import Pagina, Ponte, proxy_con_coda
 from .printer import PrinterError, S001Session, check_ready
-from .protocol import DEFAULT_SPEED, TAG_START, JobBuilder, PaperDetails, Status, pack_rows
+from .protocol import DEFAULT_SPEED, ROW_BYTES, TAG_START, JobBuilder, PaperDetails, Status, pack_rows
 from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, tag_start, to_raster
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,10 +66,11 @@ class PrinterState:
     tag: dict | None = None
     tag_time: datetime | None = None
     roll_papers: dict = field(default_factory=dict)
+    roll_mm: float = 0.0                          # 0.8.0: i millimetri usati del rotolo dentro (il continuo)
 
     @property
     def roll_left(self) -> int | None:
-        if not self.roll_counted or not self.roll_capacity:
+        if self.roll_color == CONTINUOUS_COLOR or not self.roll_counted or not self.roll_capacity:
             return None
         return max(0, self.roll_capacity - self.roll_used)
 
@@ -77,7 +78,12 @@ class PrinterState:
 # Sotto queste etichette un rotolo «finito» non insegna niente (carta tolta a metà, sensore che sbaglia)
 ROLL_MIN_LEARN = 10
 # i colori dei rotoli (il nome è anche l'opzione del menu «Rotolo montato»)
-ROLL_COLORS = {"bianco": "#ffffff", "azzurro": "#7fd3ff", "giallo": "#ffe14d", "rosa": "#ffaecf"}
+ROLL_COLORS = {"bianco": "#ffffff", "azzurro": "#7fd3ff", "giallo": "#ffe14d", "rosa": "#ffaecf",
+               "continuo": "#ffffff"}
+# 0.8.0 (11 novembre, Morgan: «i rotoli ora sono tutti bianchi [...] ora i rotoli bianchi sono infiniti»): il rotolo
+# continuo da 15 mm, senza buchi. Non si conta (niente capienza, niente rimaste): solo i centimetri usati
+CONTINUOUS_COLOR = "continuo"
+NEW_PAPERS = {"continuo": "continuo_15"}
 ROLL_KINDS = ("new", "started", "same", "unknown")
 # la carta dei rotoli nuovi comprati da Morgan (colorati e bianchi, 25 ottobre 2026): 14 x 30 mm, 210 etichette
 NEW_ROLL_PAPER = "14x30"
@@ -118,6 +124,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self.paper_saved = set(data)
         d = self.data
         d.roll_used = int(data.get("used") or 0)
+        d.roll_mm = float(data.get("mm") or 0)
         cap = data.get("capacity")
         d.roll_capacity = int(cap) if cap else None
         d.roll_counted = bool(data.get("counted"))
@@ -141,6 +148,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         self._store.async_delay_save(
             lambda: {
                 "used": d.roll_used,
+                "mm": round(d.roll_mm, 1),
                 "capacity": d.roll_capacity,
                 "counted": d.roll_counted,
                 "changed": d.roll_changed.isoformat() if d.roll_changed else None,
@@ -180,11 +188,13 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         d = self.data
         if kind != "same":
             left = d.roll_left
-            if not d.roll_finished and left:
+            if not d.roll_finished and left and d.roll_color != CONTINUOUS_COLOR:
                 d.started.setdefault(d.roll_color, []).append(int(left))
             if kind == "new":
                 d.stock[color] = max(0, int(d.stock.get(color) or 0) - 1)
                 d.roll_used, d.roll_counted = 0, True
+            if color == CONTINUOUS_COLOR:
+                d.roll_counted = False                    # infinito: non si conta
             elif kind == "started" and d.started.get(color):
                 left = d.started[color].pop()
                 d.roll_counted = bool(d.roll_capacity)
@@ -193,7 +203,9 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 d.roll_used, d.roll_counted = 0, False
             d.roll_color, d.roll_finished = color, False
             d.roll_changed = dt_util.utcnow()
-            paper = paper or (NEW_ROLL_PAPER if kind == "new" else d.roll_papers.get(color))
+            d.roll_mm = 0.0
+            paper = paper or (NEW_PAPERS.get(color, NEW_ROLL_PAPER) if kind == "new"
+                              else d.roll_papers.get(color) or NEW_PAPERS.get(color))
         else:
             d.roll_finished = False                       # «è lo stesso»: allora non era finito
         if paper:
@@ -228,7 +240,14 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 "iniziati": {c: list(d.started.get(c) or []) for c in ROLL_COLORS},
                 "colori": ROLL_COLORS, "da_confermare": d.roll_check,
                 "da_confermare_dal": d.roll_check_time.isoformat() if d.roll_check_time else None,
-                "carta": self.paper, "carte": dict(d.roll_papers), "originale": d.original, "tag": d.tag}
+                "carta": self.paper, "carte": dict(d.roll_papers), "originale": d.original, "tag": d.tag,
+                "infinito": self.continuous, "mm_usati": round(d.roll_mm, 1)}
+
+    @property
+    def continuous(self) -> bool:
+        """Dentro c'è carta senza buchi (il rotolo continuo, 0.8.0): niente conti delle etichette"""
+        p = PAPERS.get(self.paper)
+        return bool(p and p.length_px is None)
 
     @callback
     def _roll_maybe_changed(self, why: str) -> None:
@@ -256,10 +275,11 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             _LOGGER.info("S001 %s: rimesso il rotolo originale", self.address)
             self.async_change_roll(ORIGINAL_COLOR, "unknown", ORIGINAL_PAPER)
             return
-        _LOGGER.info("S001 %s: tolto il rotolo originale, dentro uno nuovo da %s", self.address, NEW_ROLL_PAPER)
-        self.paper = NEW_ROLL_PAPER
-        if d.roll_color == ORIGINAL_COLOR and not d.roll_counted:
-            d.roll_used = 0
+        # 0.8.0: i rotoli di adesso sono quelli continui: si mette quello, e si chiede lo stesso (roll_check)
+        _LOGGER.info("S001 %s: tolto il rotolo originale, dentro probabilmente il continuo", self.address)
+        self.paper = d.roll_papers.get(CONTINUOUS_COLOR) or NEW_PAPERS[CONTINUOUS_COLOR]
+        d.roll_color = CONTINUOUS_COLOR
+        d.roll_counted, d.roll_used = False, 0
         self._roll_maybe_changed("tag")
         self._save_roll()
 
@@ -275,9 +295,11 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         if tag != d.tag:
             _LOGGER.info("S001 %s: tag del rotolo %s", self.address, tag)
         d.tag, d.tag_time = tag, dt_util.utcnow()
-        carta = f"{pd.width}x{pd.length}"
+        carta = f"{pd.width}x{pd.length}" if pd.length else f"continuo_{pd.width}"
         if carta in PAPERS and self.paper != carta:            # la misura scritta nel tag vince
             self.paper = carta
+            if PAPERS[carta].length_px is None:                # un continuo originale: è il rotolo continuo
+                d.roll_color, d.roll_counted = CONTINUOUS_COLOR, False
             d.roll_papers[d.roll_color] = carta
         self._save_roll()
 
@@ -297,7 +319,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
     def _roll_paper_out(self) -> None:
         """Carta finita su un rotolo contato dall'inizio: quante ne ha fatte è la capienza."""
         d = self.data
-        if d.roll_counted and d.roll_used > ROLL_MIN_LEARN:
+        if d.roll_counted and d.roll_used > ROLL_MIN_LEARN and not self.continuous:
             _LOGGER.info("S001 %s: rotolo finito dopo %s etichette, capienza imparata", self.address, d.roll_used)
             d.roll_capacity = d.roll_used
         d.roll_finished = True
@@ -473,12 +495,16 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             return st
 
     async def async_preview(self, spec: LabelSpec) -> bytes:
+        return (await self.async_preview_info(spec))[0]
+
+    async def async_preview_info(self, spec: LabelSpec) -> tuple[bytes, float]:
+        """(PNG, lunghezza in mm) dell'anteprima (0.8.0: sul continuo ogni etichetta ha la sua lunghezza)"""
         landscape = await self.hass.async_add_executor_job(render, spec)
         png = await self.hass.async_add_executor_job(preview_png, landscape)
         self.data.preview = png
         self.data.preview_time = dt_util.utcnow()
         self.async_set_updated_data(self.data)
-        return png
+        return png, round(landscape.width / 8, 1)
 
     async def async_print(self, spec: LabelSpec, copies: int = 1, density: int | None = None) -> None:
         await self.async_print_many([(spec, copies)], density)
@@ -518,6 +544,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 x for x in (last_spec.title, last_spec.subtitle, last_spec.ssid) if x) or last_spec.layout
             self.data.labels_printed += uscite
             self.data.roll_used += uscite
+            if paper.length_px is None:                       # 0.8.0: i millimetri del continuo, coda compresa
+                self.data.roll_mm += sum((len(p.rows) / ROW_BYTES / 8 + 8) * p.copie for p in pagine)
             self._save_roll()
             self.data.last_error = None
             self.async_set_updated_data(self.data)

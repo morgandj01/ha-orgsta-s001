@@ -168,6 +168,9 @@ class RollUsedSensor(S001Entity, SensorEntity):
             "carte": info["carte"],
             "originale": info["originale"],
             "tag": info["tag"],
+            # 0.8.0: il rotolo continuo non si conta, si sa solo quanta carta è uscita
+            "infinito": info["infinito"],
+            "mm_usati": info["mm_usati"],
         }
 
 

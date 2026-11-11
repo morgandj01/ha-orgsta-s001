@@ -44,6 +44,22 @@ packages:
 - `orgsta_s001.print_many` stampa un giro intero (`labels:` con i campi di `print` e `copies`) in un lavoro solo
 - Sul proxy: `orgsta_metti`, `orgsta_stato`, `orgsta_annulla` (azioni dell'API con la risposta)
 
+## Il rotolo continuo (0.8.0)
+
+Il rotolo bianco continuo da 15 mm (carta `continuo_15`, rotolo `continuo` «Bianco continuo») non ha buchi tra le
+etichette: ogni etichetta è lunga quanto serve e si strappa a mano.
+
+- **Lunghezza**: dal testo vero (la scritta più grande che sta nel nastro), arrotondata per eccesso a `length_step` mm
+  e dentro `length_min`/`length_max`; con `length_mm` è quella e basta. Oltre il massimo il testo si rimpicciolisce
+- **Cavo a bandiera**: `layout: cavo` con `diameter_mm` (diametro esterno). Lato A · giro del cavo (π × diametro +
+  2 mm, tra due tratteggi) · lato B capovolto: si avvolge il giro e si incollano A e B schiena contro schiena. QR
+  (`qr`), icona e testo su tutti e due i lati. Scatti, minimo e massimo valgono per lato
+- **Segno NFC**: `nfc: true` mette il segno NFC in fondo (c'è un tag da avvicinare)
+- **Infinito**: niente conto delle etichette né capienza; l'attributo `mm_usati` del sensore Rotolo dice quanta carta
+  è uscita. I rotoli di prima (12x40 originale, 14x30 colorati) restano e si cambiano come prima
+- `orgsta_s001.preview` risponde anche `length_mm`
+- Il tag del rotolo originale che sparisce fa pensare al rotolo continuo (e chiede lo stesso)
+
 ## Entità
 
 | Entità | Cosa fa |

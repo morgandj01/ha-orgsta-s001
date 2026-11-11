@@ -32,7 +32,12 @@ from .const import (
     ATTR_IMAGE,
     ATTR_INVERT,
     ATTR_LAYOUT,
+    ATTR_DIAMETER_MM,
+    ATTR_LENGTH_MAX,
+    ATTR_LENGTH_MIN,
     ATTR_LENGTH_MM,
+    ATTR_LENGTH_STEP,
+    ATTR_NFC,
     ATTR_PAPER,
     ATTR_PASSWORD,
     ATTR_QR,
@@ -83,7 +88,13 @@ LABEL_SCHEMA = {
     vol.Optional(ATTR_INVERT, default=False): cv.boolean,
     vol.Optional(ATTR_ALIGN, default="center"): vol.In(["center", "left"]),
     vol.Optional(ATTR_PAPER): vol.In(list(PAPERS)),
-    vol.Optional(ATTR_LENGTH_MM): vol.All(vol.Coerce(float), vol.Range(min=8, max=200)),
+    vol.Optional(ATTR_LENGTH_MM): vol.All(vol.Coerce(float), vol.Range(min=8, max=300)),
+    # 0.8.0: rotolo continuo (scatti, minimo e massimo; per il cavo a bandiera valgono per lato), diametro, segno NFC
+    vol.Optional(ATTR_LENGTH_STEP): vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
+    vol.Optional(ATTR_LENGTH_MIN): vol.All(vol.Coerce(float), vol.Range(min=8, max=300)),
+    vol.Optional(ATTR_LENGTH_MAX): vol.All(vol.Coerce(float), vol.Range(min=8, max=300)),
+    vol.Optional(ATTR_DIAMETER_MM): vol.All(vol.Coerce(float), vol.Range(min=1, max=40)),
+    vol.Optional(ATTR_NFC, default=False): cv.boolean,
 }
 PRINT_SCHEMA = vol.Schema(
     {
@@ -193,6 +204,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             align=d.get(ATTR_ALIGN, "center"),
             paper=d.get(ATTR_PAPER) or coord.paper,
             length_mm=d.get(ATTR_LENGTH_MM),
+            length_step=d.get(ATTR_LENGTH_STEP),
+            length_min=d.get(ATTR_LENGTH_MIN),
+            length_max=d.get(ATTR_LENGTH_MAX),
+            diameter_mm=d.get(ATTR_DIAMETER_MM),
+            nfc=bool(d.get(ATTR_NFC, False)),
             extra=extra,
         )
 
@@ -227,10 +243,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         coord = _coordinator(call)
         spec = await _spec(call, coord)
         try:
-            png = await coord.async_preview(spec)
+            png, mm = await coord.async_preview_info(spec)
         except LabelError as err:
             raise ServiceValidationError(str(err)) from err
-        return {"png_base64": base64.b64encode(png).decode()}
+        return {"png_base64": base64.b64encode(png).decode(), "length_mm": mm}
 
     async def handle_feed(call: ServiceCall) -> None:
         await _coordinator(call).async_feed()

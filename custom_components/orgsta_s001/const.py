@@ -39,6 +39,12 @@ ATTR_LABELS = "labels"
 ATTR_DENSITY = "density"
 ATTR_PAPER = "paper"
 ATTR_LENGTH_MM = "length_mm"
+# 0.8.0: rotolo continuo
+ATTR_LENGTH_STEP = "length_step"
+ATTR_LENGTH_MIN = "length_min"
+ATTR_LENGTH_MAX = "length_max"
+ATTR_DIAMETER_MM = "diameter_mm"
+ATTR_NFC = "nfc"
 
 DEFAULT_DENSITY = 9
 MAX_COPIES = 20

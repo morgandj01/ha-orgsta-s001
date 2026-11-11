@@ -120,6 +120,9 @@
       },
       "stock_rosa": {
         "name": "Spare rolls pink"
+      },
+      "stock_continuo": {
+        "name": "Continuous stock"
       }
     },
     "select": {
@@ -142,7 +145,8 @@
           "bianco": "White",
           "azzurro": "Light blue",
           "giallo": "Yellow",
-          "rosa": "Pink"
+          "rosa": "Pink",
+          "continuo": "White continuous"
         }
       }
     },
@@ -218,7 +222,8 @@
         "bianco": "White",
         "azzurro": "Light blue",
         "giallo": "Yellow",
-        "rosa": "Pink"
+        "rosa": "Pink",
+          "continuo": "White continuous"
       }
     },
     "roll_kind": {
