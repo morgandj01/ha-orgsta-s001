@@ -21,6 +21,29 @@ logger:
     ble_client: WARN
     esp32_ble_server: WARN
 
+globals:
+  # 11 novembre: la vera manda su ff03 il credito (01 07, 02 c000) solo appena collegata; l'app lo aspetta prima di
+  # scrivere. La spia lo tiene e lo ripete all'app finché l'app non comincia a scrivere
+  - id: credito_1
+    type: std::vector<uint8_t>
+  - id: credito_2
+    type: std::vector<uint8_t>
+  - id: app_scrive
+    type: bool
+    initial_value: "false"
+
+interval:
+  - interval: 2s
+    then:
+      - lambda: |-
+          if (id(app_scrive)) return;
+          for (auto *c : {&id(credito_1), &id(credito_2)}) {
+            if (c->empty()) continue;
+            std::vector<uint8_t> v(*c);
+            id(finta_ff03)->set_value(std::move(v));
+            id(finta_ff03)->notify();
+          }
+
 esp32_ble:
   name: "S001"
   max_connections: 3
@@ -80,7 +103,6 @@ esp32_ble_server:
       characteristics:
         - id: finta_ff01
           uuid: 0xFF01
-          read: true
           notify: true
         - id: finta_ff02
           uuid: 0xFF02
@@ -90,6 +112,7 @@ esp32_ble_server:
             then:
               - lambda: |-
                   ESP_LOGI("spia", "%u app→ff02 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
+                  id(app_scrive) = true;
               - ble_client.ble_write:
                   id: vera
                   service_uuid: FF00
@@ -97,19 +120,7 @@ esp32_ble_server:
                   value: !lambda return x;
         - id: finta_ff03
           uuid: 0xFF03
-          read: true
-          write: true
-          write_no_response: true
           notify: true
-          on_write:
-            then:
-              - lambda: |-
-                  ESP_LOGI("spia", "%u app→ff03 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
-              - ble_client.ble_write:
-                  id: vera
-                  service_uuid: FF00
-                  characteristic_uuid: FF03
-                  value: !lambda return x;
 
 sensor:
   - platform: ble_client
@@ -138,6 +149,8 @@ sensor:
     update_interval: never
     lambda: |-
       ESP_LOGI("spia", "%u →app ff03 %u %s", (unsigned) millis(), (unsigned) x.size(), format_hex(x).c_str());
+      if (!x.empty() && x[0] == 1) id(credito_1).assign(x.begin(), x.end());
+      if (!x.empty() && x[0] == 2) id(credito_2).assign(x.begin(), x.end());
       std::vector<uint8_t> v(x.begin(), x.end());
       id(finta_ff03)->set_value(std::move(v));
       id(finta_ff03)->notify();
