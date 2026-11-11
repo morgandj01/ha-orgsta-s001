@@ -3,6 +3,7 @@
 #ifdef USE_ESP32
 
 #include <esp_heap_caps.h>
+#include <esp_gatt_common_api.h>
 #include <algorithm>
 #include <cstring>
 
@@ -26,8 +27,8 @@ static const uint16_t CAR_FLUSSO = 0xFF03;
 static const uint8_t INIZIO = 0x64;
 static const uint8_t FINE = 0x9B;
 static const size_t RIGA = 12;              // 96 punti
-static const size_t RIGHE_PEZZO = 4;        // ROWS_PER_SLICE
-static const size_t PEZZO_MAX = 128;        // MAX_CHUNK
+static const size_t RIGHE_PEZZO = 24;       // come l'app originale (11 novembre): 24 righe per comando
+static const size_t PEZZO_MAX = 192;        // come l'app (e «02 c0 00» della stampantina)
 static const uint32_t PAUSA_MS = 20;        // CHUNK_DELAY
 static const uint32_t COLLEGA_MS = 25000;   // per trovarla e collegarsi
 static const uint32_t STATO_MS = 6000;      // STATUS_TIMEOUT
@@ -64,6 +65,8 @@ static const char *nome_fase(Fase f) {
 static uint32_t memoria_libera() { return heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL); }
 
 void OrgstaCoda::setup() {
+  // 0.9.1: senza questo ESP-IDF resta a mtu 23 e ogni pacchetto è di 20 byte (l'app ne manda 192)
+  esp_ble_gatt_set_local_mtu(247);
   // il collegamento lo apre solo questa coda, quando ha qualcosa da stampare
   this->parent()->set_auto_connect(false);
 }
@@ -369,8 +372,12 @@ void OrgstaCoda::prepara_pagina_() {
 }
 
 bool OrgstaCoda::scrivi_(const uint8_t *dati, size_t n) {
+  // 0.9.1: col permesso di ff03 si scrive come l'app, senza aspettare la risposta: è il permesso a fare da freno
+  const bool col_permesso = this->credito_ >= 0;
   auto ret = esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->h_scrivi_,
-                                      n, const_cast<uint8_t *>(dati), ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+                                      n, const_cast<uint8_t *>(dati),
+                                      col_permesso ? ESP_GATT_WRITE_TYPE_NO_RSP : ESP_GATT_WRITE_TYPE_RSP,
+                                      ESP_GATT_AUTH_REQ_NONE);
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "scrittura rifiutata: %d", ret);
     return false;
@@ -379,8 +386,14 @@ bool OrgstaCoda::scrivi_(const uint8_t *dati, size_t n) {
   if (this->pezzi_ > 0 && ora - this->t_scritto_ > this->pausa_max_)
     this->pausa_max_ = ora - this->t_scritto_;
   this->pezzi_++;
-  this->aspetto_risposta_ = true;
   this->t_scritto_ = ora;
+  if (col_permesso) {
+    this->credito_--;
+    this->off_ += n;           // niente risposta da aspettare
+    this->aspetto_risposta_ = false;
+  } else {
+    this->aspetto_risposta_ = true;
+  }
   return true;
 }
 
@@ -518,8 +531,23 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       }
       break;
     case ESP_GATTC_NOTIFY_EVT:
-      if (param->notify.handle == this->h_notifica_)
+      if (param->notify.handle == this->h_notifica_) {
         this->leggi_notifica_(param->notify.value, param->notify.value_len);
+      } else if (this->h_flusso_ && param->notify.handle == this->h_flusso_ && param->notify.value_len >= 2) {
+        const uint8_t *v = param->notify.value;
+        if (v[0] == 0x01) {
+          // «01 07» quando il buffer è vuoto (si riparte da lì), «01 01» per ogni pacchetto digerito
+          if (v[1] > 1 || this->credito_ < 0)
+            this->credito_ = v[1];
+          else
+            this->credito_ = std::min<int16_t>(this->credito_ + v[1], 16);
+          this->t_credito_ = millis();
+        } else if (v[0] == 0x02 && param->notify.value_len >= 3) {
+          uint16_t m = v[1] | (v[2] << 8);
+          if (m >= 20)
+            this->pezzo_max_ = m;
+        }
+      }
       break;
     case ESP_GATTC_WRITE_CHAR_EVT:
       if (param->write.handle != this->h_scrivi_ || !this->aspetto_risposta_)
@@ -537,6 +565,7 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
     case ESP_GATTC_CLOSE_EVT: {
       bool era = this->pronta_;
       this->pronta_ = false;
+      this->credito_ = -1;
       this->aspetto_risposta_ = false;
       this->mtu_ = 23;
       this->mtu_chiesto_ = false;
@@ -625,6 +654,8 @@ void OrgstaCoda::loop() {
       if (!this->collegata_())
         break;
       if (this->off_ < this->pagina_.size()) {
+        if (this->credito_ == 0)
+          break;
         if (!this->aspetto_risposta_) {
           this->ultimo_pezzo_ = this->pagina_.size() - this->off_;
           if (!this->scrivi_(this->pagina_.data() + this->off_, this->ultimo_pezzo_))
@@ -634,6 +665,8 @@ void OrgstaCoda::loop() {
         }
         break;
       }
+      if (this->h_flusso_ && this->credito_ < 0 && in_fase < STATO_MS + 4000)
+        break;  // 0.9.1: il permesso arriva qualche secondo dopo il collegamento, si stampa solo con quello
       if (this->nuovo_stato_ || in_fase > STATO_MS) {
         const uint16_t b = this->bits_;
         if (b & (1 << 8)) {
@@ -670,9 +703,16 @@ void OrgstaCoda::loop() {
         this->vai_(Fase::ASPETTO);
         break;
       }
-      if (ora - this->t_scritto_ < PAUSA_MS)
+      if (this->credito_ == 0) {
+        // la stampantina ha il buffer pieno: si aspetta il suo «01 ..» (anche secondi, mentre stampa)
+        if (ora - std::max(this->t_scritto_, this->t_credito_) > STAMPA_MS)
+          this->ricomincia_pagina_();
         break;
-      size_t pezzo = std::max<size_t>(20, std::min<size_t>(PEZZO_MAX, this->mtu_ > 3 ? this->mtu_ - 3 : 20));
+      }
+      if (this->credito_ < 0 && ora - this->t_scritto_ < PAUSA_MS)
+        break;
+      size_t pezzo = std::max<size_t>(20, std::min<size_t>(std::min<size_t>(PEZZO_MAX, this->pezzo_max_),
+                                                           this->mtu_ > 3 ? this->mtu_ - 3 : 20));
       this->ultimo_pezzo_ = std::min(pezzo, this->pagina_.size() - this->off_);
       if (!this->scrivi_(this->pagina_.data() + this->off_, this->ultimo_pezzo_))
         this->ricomincia_pagina_();
