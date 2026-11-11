@@ -76,31 +76,29 @@ def _mac_meno(mac: str, n: int) -> str | None:
 
 
 def _dispositivi(devreg, source: str) -> list:
-    """I dispositivi di HA che possono essere il proxy con quel MAC Bluetooth."""
-    out, visti = [], set()
-    prove = [(dr.CONNECTION_BLUETOOTH, source), (dr.CONNECTION_NETWORK_MAC, source)]
+    """I dispositivi di HA che possono essere il proxy con quel MAC Bluetooth (0.8.3: tutti, anche quando lo stesso MAC
+    sta in più dispositivi, per esempio uno di UniFi e uno di ESPHome)."""
+    macs = {(dr.CONNECTION_BLUETOOTH, source.lower()), (dr.CONNECTION_NETWORK_MAC, source.lower())}
     wifi = _mac_meno(source, 2)
     if wifi:
-        prove.append((dr.CONNECTION_NETWORK_MAC, wifi))
-    for kind, mac in prove:
-        for m in (mac.lower(), mac.upper()):
-            dev = devreg.async_get_device(connections={(kind, m)})
-            if dev and dev.id not in visti:
-                visti.add(dev.id)
-                out.append(dev)
-    return out
+        macs.add((dr.CONNECTION_NETWORK_MAC, wifi.lower()))
+    return [d for d in devreg.devices.values()
+            if any((k, str(m).lower()) in macs for k, m in d.connections)]
 
 
 def _nodo_con_coda(hass: HomeAssistant, dev) -> str | None:
-    for eid in dev.config_entries:
+    """Il nome del nodo ESPHome che ha l'azione della coda. Il nome nella configurazione di HA può essere vecchio
+    (ble-frigorifero era nato come irk-capture): si prova anche il nome del dispositivo e il titolo"""
+    for eid in getattr(dev, "config_entries", None) or [dev.config_entry_id]:
         entry = hass.config_entries.async_get_entry(eid)
         if entry is None or entry.domain != "esphome":
             continue
-        nome = entry.data.get("device_name") or dev.name or ""
-        nodo = nome.replace("-", "_").lower()
-        if nodo and hass.services.has_service("esphome", _servizio(nodo, AZIONE)):
-            return nodo
+        for nome in (entry.data.get("device_name"), dev.name, entry.title):
+            nodo = str(nome or "").strip().lower().replace("-", "_").replace(" ", "_")
+            if nodo and hass.services.has_service("esphome", _servizio(nodo, AZIONE)):
+                return nodo
     return None
+
 
 def proxy_con_coda(hass: HomeAssistant, address: str) -> list[Proxy]:
     """I proxy che sentono la stampantina e hanno la coda, dal più vicino (RSSI migliore)."""

@@ -572,7 +572,13 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 self.data.last_via.update({k: u[k] for k in ("mtu", "ms_invio", "pausa_max", "pezzi", "rifatte")
                                            if k in u})
             except PrinterError as err:
-                if ponte.consegnate == 0 and err.key == "connect":
+                if err.key == "connect" and not ponte.fatte:
+                    # 0.8.3: non ci arriva (anche dopo averle prese): si tolgono dalla sua coda e si prova il prossimo
+                    if ponte.consegnate:
+                        try:
+                            await ponte.annulla()
+                        except Exception:  # noqa: BLE001
+                            pass
                     _LOGGER.info("S001 %s: %s non ci arriva (%s), provo un altro", self.address, proxy.nome, err)
                     continue
                 if ponte.fatte:
