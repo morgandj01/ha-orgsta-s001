@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_DENSITY, DOMAIN
-from .ponte import Pagina, Ponte, proxy_con_coda
+from .ponte import Pagina, Ponte, Proxy, proxy_con_coda
 from .printer import PrinterError, S001Session, check_ready
 from .protocol import DEFAULT_SPEED, ROW_BYTES, TAG_START, JobBuilder, PaperDetails, Status, pack_rows
 from .render import DEFAULT_PAPER, PAPERS, LabelSpec, preview_png, render, tag_start, to_raster
@@ -118,6 +118,9 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         # fino a quando un proxy resta collegato alla stampantina dopo una stampa (0.7.0): intanto niente
         # collegamenti diretti da HA, la stampantina ne accetta uno solo
         self._ponte_fino = 0.0
+        # 0.9.4 (Morgan, 11 novembre: «non possiamo comandare noi quale proxy la prende quindi forziamola li»): un proxy
+        # fisso per la coda. Con lui niente altri proxy, niente stampa in diretta e niente letture in diretta di HA
+        self.proxy_fisso: str = ""
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{address.replace(':', '').lower()}")
 
     # ---- rotolo: etichette usate da quando è stato messo, capienza imparata quando finisce ----
@@ -479,8 +482,16 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             translation_domain=DOMAIN, translation_key=f"err_{key}", translation_placeholders={"detail": str(err)}
         ) from err
 
+    def proxy_disponibili(self) -> list[str]:
+        """I nodi ESPHome che hanno la coda (esphome.<nodo>_orgsta_metti)"""
+        return sorted(s[: -len("_orgsta_metti")] for s in self.hass.services.async_services().get("esphome", {})
+                      if s.endswith("_orgsta_metti"))
+
     async def async_refresh_status(self) -> Status | None:
         async with self._lock:
+            if self.proxy_fisso:
+                # col proxy fisso HA non si collega mai da sé: lo stato è l'ultimo che ha detto il proxy
+                return self.data.status
             if time.monotonic() < self._ponte_fino:
                 # un proxy è ancora collegato a lei: lo stato è quello che ha appena detto il proxy
                 return self.data.status
@@ -536,6 +547,8 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             try:
                 self.data.last_via = {}
                 uscite = await self._stampa_coda(pagine, paper.mode, dens, start)
+                if uscite is None and self.proxy_fisso:
+                    raise PrinterError("connect", f"proxy fisso {self.proxy_fisso} non raggiungibile")
                 if uscite is None:
                     self.data.last_via = {"via": "diretta", "da": self._proxy_diretto()}
                     uscite = await self._stampa_diretta(pagine, paper.mode, dens, start)
@@ -561,7 +574,13 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
     async def _stampa_coda(self, pagine: list[Pagina], mode: str, density: int, start: int) -> int | None:
         """Col proxy che la sente meglio e ha la coda; un altro se il primo non la raggiunge. None = nessuno."""
         provati = 0
-        for proxy in proxy_con_coda(self.hass, self.address)[:3]:
+        candidati = proxy_con_coda(self.hass, self.address)[:3]
+        if self.proxy_fisso:
+            if self.proxy_fisso not in self.proxy_disponibili():
+                return None
+            rssi = next((p.rssi for p in candidati if p.nodo == self.proxy_fisso), -100)
+            candidati = [Proxy(self.proxy_fisso, self.proxy_fisso.replace("_", "-"), rssi)]
+        for proxy in candidati:
             ponte = Ponte(self.hass, proxy, self._on_status)
             provati += 1
             try:
@@ -572,7 +591,7 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
                 self.data.last_via.update({k: u[k] for k in ("mtu", "ms_invio", "pausa_max", "pezzi", "rifatte")
                                            if k in u})
             except PrinterError as err:
-                if err.key == "connect" and not ponte.fatte:
+                if err.key == "connect" and not ponte.fatte and not self.proxy_fisso:
                     # 0.8.3: non ci arriva (anche dopo averle prese): si tolgono dalla sua coda e si prova il prossimo
                     if ponte.consegnate:
                         try:

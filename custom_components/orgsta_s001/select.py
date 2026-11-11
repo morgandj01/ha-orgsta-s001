@@ -14,7 +14,7 @@ from .render import PAPERS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: S001ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
-    async_add_entities([Paper(entry.runtime_data), RollColor(entry.runtime_data)])
+    async_add_entities([Paper(entry.runtime_data), RollColor(entry.runtime_data), ProxyFisso(entry.runtime_data)])
 
 
 class Paper(S001Entity, SelectEntity, RestoreEntity):
@@ -54,3 +54,35 @@ class RollColor(S001Entity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         self.coordinator.async_set_color(option)
+
+
+AUTOMATICO = "automatico"
+
+
+class ProxyFisso(S001Entity, SelectEntity, RestoreEntity):
+    """0.9.4: il proxy che stampa sempre lui («automatico» = quello che la sente meglio, come prima)"""
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, c) -> None:
+        super().__init__(c, "proxy")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) and last.state not in (None, "unknown", "unavailable",
+                                                                                AUTOMATICO):
+            self.coordinator.proxy_fisso = last.state
+
+    @property
+    def options(self) -> list[str]:
+        nodi = self.coordinator.proxy_disponibili()
+        if self.coordinator.proxy_fisso and self.coordinator.proxy_fisso not in nodi:
+            nodi.append(self.coordinator.proxy_fisso)
+        return [AUTOMATICO, *nodi]
+
+    @property
+    def current_option(self) -> str:
+        return self.coordinator.proxy_fisso or AUTOMATICO
+
+    async def async_select_option(self, option: str) -> None:
+        self.coordinator.proxy_fisso = "" if option == AUTOMATICO else option
+        self.async_write_ha_state()

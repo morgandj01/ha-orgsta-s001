@@ -148,6 +148,9 @@
           "rosa": "Pink",
           "continuo": "White continuous"
         }
+      },
+      "proxy": {
+        "name": "Queue proxy"
       }
     },
     "text": {
@@ -223,7 +226,7 @@
         "azzurro": "Light blue",
         "giallo": "Yellow",
         "rosa": "Pink",
-          "continuo": "White continuous"
+        "continuo": "White continuous"
       }
     },
     "roll_kind": {

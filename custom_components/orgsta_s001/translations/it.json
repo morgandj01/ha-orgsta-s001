@@ -148,6 +148,9 @@
           "rosa": "Rosa",
           "continuo": "Bianco continuo"
         }
+      },
+      "proxy": {
+        "name": "Proxy della coda"
       }
     },
     "text": {
@@ -223,7 +226,7 @@
         "azzurro": "Azzurro",
         "giallo": "Giallo",
         "rosa": "Rosa",
-          "continuo": "Bianco continuo"
+        "continuo": "Bianco continuo"
       }
     },
     "roll_kind": {
