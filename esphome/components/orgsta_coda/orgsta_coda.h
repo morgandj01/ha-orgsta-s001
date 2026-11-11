@@ -134,7 +134,8 @@ class OrgstaCoda : public Component, public ble_client::BLEClientNode {
   // 0.9.2: diario degli ultimi passi (col Wi-Fi spento non si vede il registro): torna in orgsta_stato
   void nota_(const char *fmt, ...);
   std::deque<std::string> diario_;
-  int16_t credito_{-1};   // -1 = non ancora detto
+  int16_t credito_{-1};
+  int16_t in_volo_{0};    // 0.9.3: pacchetti mandati e non ancora digeriti (l'app ne tiene al massimo 2)   // -1 = non ancora detto
   uint16_t pezzo_max_{192};
   uint32_t t_credito_{0};
   HighFrequencyLoopRequester veloce_;

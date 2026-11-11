@@ -31,6 +31,8 @@ static const size_t RIGA = 12;              // 96 punti
 static const size_t RIGHE_PEZZO = 24;       // come l'app originale (11 novembre): 24 righe per comando
 static const size_t PEZZO_MAX = 192;        // come l'app (e «02 c0 00» della stampantina)
 static const uint32_t PAUSA_MS = 20;        // CHUNK_DELAY
+static const int16_t IN_VOLO_MAX = 2;       // 0.9.3: come l'app, mai più di 2 pacchetti senza il «01 01»
+static const uint32_t PAUSA_PERMESSO_MS = 25;
 static const uint32_t COLLEGA_MS = 25000;   // per trovarla e collegarsi
 static const uint32_t STATO_MS = 6000;      // STATUS_TIMEOUT
 static const uint32_t STAMPA_MS = 40000;    // COMPLETION_TIMEOUT
@@ -407,6 +409,7 @@ bool OrgstaCoda::scrivi_(const uint8_t *dati, size_t n) {
   this->t_scritto_ = ora;
   if (col_permesso) {
     this->credito_--;
+    this->in_volo_++;
     this->off_ += n;           // niente risposta da aspettare
     this->aspetto_risposta_ = false;
   } else {
@@ -559,10 +562,13 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
                     (int) this->credito_, (unsigned) this->off_);
         if (v[0] == 0x01) {
           // «01 07» quando il buffer è vuoto (si riparte da lì), «01 01» per ogni pacchetto digerito
-          if (v[1] > 1 || this->credito_ < 0)
+          if (v[1] > 1 || this->credito_ < 0) {
             this->credito_ = v[1];
-          else
+            this->in_volo_ = 0;
+          } else {
             this->credito_ = std::min<int16_t>(this->credito_ + v[1], 16);
+            this->in_volo_ = std::max<int16_t>(0, this->in_volo_ - v[1]);
+          }
           this->t_credito_ = millis();
         } else if (v[0] == 0x02 && param->notify.value_len >= 3) {
           uint16_t m = v[1] | (v[2] << 8);
@@ -591,6 +597,7 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       bool era = this->pronta_;
       this->pronta_ = false;
       this->credito_ = -1;
+      this->in_volo_ = 0;
       this->aspetto_risposta_ = false;
       this->mtu_ = 23;
       this->mtu_chiesto_ = false;
@@ -726,6 +733,11 @@ void OrgstaCoda::loop() {
         this->vista_stampa_ = false;
         this->nuovo_stato_ = false;
         this->vai_(Fase::ASPETTO);
+        break;
+      }
+      if (this->credito_ > 0 && (this->in_volo_ >= IN_VOLO_MAX || ora - this->t_scritto_ < PAUSA_PERMESSO_MS)) {
+        if (ora - std::max(this->t_scritto_, this->t_credito_) > STAMPA_MS)
+          this->ricomincia_pagina_();
         break;
       }
       if (this->credito_ == 0) {
