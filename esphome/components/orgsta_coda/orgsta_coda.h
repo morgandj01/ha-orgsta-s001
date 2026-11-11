@@ -9,6 +9,7 @@
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/json/json_util.h"
 #include "esphome/core/component.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/string_ref.h"
 
 namespace esphome::orgsta_coda {
@@ -101,6 +102,17 @@ class OrgstaCoda : public Component, public ble_client::BLEClientNode {
   bool aspetto_risposta_{false};
   uint32_t t_scritto_{0};
   uint8_t seq_{0};
+
+  // 0.8.1 (11 novembre, «stampa a pezzi»): come è andata l'ultima pagina, per le prove. Se tra un pezzo e l'altro passa
+  // troppo la testina si ferma e riparte: è lì che l'etichetta esce a pezzi
+  uint32_t t_pagina_{0};
+  uint32_t ms_invio_{0};
+  uint32_t pausa_max_{0};
+  uint32_t pezzi_{0};
+  uint32_t byte_pagina_{0};
+  uint32_t rifatte_{0};
+  bool mtu_chiesto_{false};
+  HighFrequencyLoopRequester veloce_;
 
   // lo stato della stampante (l'ultima risposta 0x80/0x81/0xFF)
   std::vector<uint8_t> rx_;

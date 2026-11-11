@@ -1,4 +1,5 @@
-# La coda della stampantina ORGSTA S001 dentro un proxy Bluetooth ESPHome (0.7.0).
+# La coda della stampantina ORGSTA S001 dentro un proxy Bluetooth ESPHome (0.7.0, prove della 0.8.1: mtu grande, giro
+# veloce mentre manda la pagina, tempi dell'ultima pagina in `orgsta_stato`).
 #
 # Si aggiunge a un proxy che c'è già, senza toccare il resto (Bermuda, luci, LOCO):
 #

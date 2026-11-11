@@ -121,6 +121,7 @@ class Ponte:
         self.consegnate = 0
         self.fatte = 0
         self.pagine = 0
+        self.ultimo: dict = {}        # l'ultima risposta del proxy (0.8.1: mtu, tempi dell'ultima pagina)
 
     async def _chiama(self, azione: str, dati: dict | None = None) -> dict:
         resp = await asyncio.wait_for(
@@ -138,6 +139,7 @@ class Ponte:
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("status callback failed")
         if isinstance(r, dict) and r.get("lavoro") == self.lavoro:
+            self.ultimo = r
             self.fatte = int(r.get("fatte") or 0)
             self.pagine = int(r.get("pagine") or 0)
         return r if isinstance(r, dict) else {}

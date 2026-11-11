@@ -32,6 +32,8 @@ class PrinterState:
     status_time: datetime | None = None
     last_print: datetime | None = None
     last_text: str | None = None
+    # 0.8.1 (11 novembre, «stampa a pezzi»): da dove è passata l'ultima stampa e quanto ci ha messo, per le prove
+    last_via: dict = field(default_factory=dict)
     last_error: str | None = None
     busy: bool = False
     labels_printed: int = 0
@@ -530,10 +532,15 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         async with self._lock:
             self.data.busy = True
             self.async_set_updated_data(self.data)
+            t0 = time.monotonic()
             try:
+                self.data.last_via = {}
                 uscite = await self._stampa_coda(pagine, paper.mode, dens, start)
                 if uscite is None:
+                    self.data.last_via = {"via": "diretta", "da": self._proxy_diretto()}
                     uscite = await self._stampa_diretta(pagine, paper.mode, dens, start)
+                self.data.last_via["secondi"] = round(time.monotonic() - t0, 1)
+                self.data.last_via["byte"] = sum(len(p.rows) for p in pagine)
             except PrinterError as err:
                 self.data.busy = False
                 self._raise(err)
@@ -559,7 +566,11 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
             provati += 1
             try:
                 _LOGGER.debug("S001 %s: stampa dalla coda di %s (rssi %s)", self.address, proxy.nome, proxy.rssi)
+                self.data.last_via = {"via": "coda", "da": proxy.nome, "rssi": proxy.rssi}
                 uscite = await ponte.stampa(pagine, mode=mode, density=density, speed=DEFAULT_SPEED, start=start)
+                u = ponte.ultimo
+                self.data.last_via.update({k: u[k] for k in ("mtu", "ms_invio", "pausa_max", "pezzi", "rifatte")
+                                           if k in u})
             except PrinterError as err:
                 if ponte.consegnate == 0 and err.key == "connect":
                     _LOGGER.info("S001 %s: %s non ci arriva (%s), provo un altro", self.address, proxy.nome, err)
@@ -576,6 +587,14 @@ class S001Coordinator(DataUpdateCoordinator[PrinterState]):
         if provati:
             _LOGGER.info("S001 %s: nessun proxy con la coda la raggiunge, stampo in diretta", self.address)
         return None
+
+    def _proxy_diretto(self) -> str | None:
+        """Il proxy (o l'adattatore) da cui HA si collega in diretta: quello che la sente meglio"""
+        try:
+            info = bluetooth.async_last_service_info(self.hass, self.address, connectable=True)
+            return f"{info.source} ({info.rssi})" if info else None
+        except Exception:  # noqa: BLE001
+            return None
 
     async def _stampa_diretta(self, pagine: list[Pagina], mode: str, density: int, start: int) -> int:
         """Com'era fino alla 0.6: HA collegato alla stampantina, pezzo per pezzo."""

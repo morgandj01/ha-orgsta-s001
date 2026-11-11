@@ -110,7 +110,8 @@ class LastPrintSensor(S001Entity, SensorEntity, RestoreEntity):
     @property
     def extra_state_attributes(self):
         t = self.coordinator.data.last_text or self._restored_attrs.get("contenuto")
-        return {"contenuto": t}
+        via = self.coordinator.data.last_via or {}
+        return {"contenuto": t, **({"via": via} if via else {})}
 
 
 class CountSensor(S001Entity, SensorEntity, RestoreEntity):

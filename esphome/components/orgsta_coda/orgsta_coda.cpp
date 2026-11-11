@@ -93,6 +93,12 @@ void OrgstaCoda::vai_(Fase f) {
     ESP_LOGD(TAG, "%s -> %s", nome_fase(this->fase_), nome_fase(f));
   this->fase_ = f;
   this->t_fase_ = millis();
+  // 0.8.1: mentre manda la pagina il giro di ESPHome non aspetta i suoi ~16 ms tra un pezzo e l'altro (con tante
+  // scritture piccole le pause si sommano e la testina resta senza righe)
+  if (f == Fase::STATO || f == Fase::SCRIVO)
+    this->veloce_.start();
+  else
+    this->veloce_.stop();
 }
 
 void OrgstaCoda::scollega_() {
@@ -203,6 +209,13 @@ void OrgstaCoda::stato(JsonObject root) {
   root["libera"] = memoria_libera();
   root["collegata"] = this->collegata_();
   root["errore"] = this->errore_txt_;
+  // l'ultima pagina mandata (0.8.1): per capire se la stampante resta senza dati a metà
+  root["mtu"] = this->mtu_;
+  root["ms_invio"] = this->ms_invio_;
+  root["pausa_max"] = this->pausa_max_;
+  root["pezzi"] = this->pezzi_;
+  root["byte_pagina"] = this->byte_pagina_;
+  root["rifatte"] = this->rifatte_;
   if (!this->st_.empty()) {
     root["st_cmd"] = this->st_cmd_;
     root["st"] = format_hex(this->st_);
@@ -300,6 +313,11 @@ void OrgstaCoda::prepara_pagina_() {
   this->off_ = 0;
   this->aspetto_risposta_ = false;
   this->vista_stampa_ = false;
+  this->t_pagina_ = millis();
+  this->ms_invio_ = 0;
+  this->pausa_max_ = 0;
+  this->pezzi_ = 0;
+  this->byte_pagina_ = this->pagina_.size();
 }
 
 bool OrgstaCoda::scrivi_(const uint8_t *dati, size_t n) {
@@ -309,8 +327,12 @@ bool OrgstaCoda::scrivi_(const uint8_t *dati, size_t n) {
     ESP_LOGW(TAG, "scrittura rifiutata: %d", ret);
     return false;
   }
+  const uint32_t ora = millis();
+  if (this->pezzi_ > 0 && ora - this->t_scritto_ > this->pausa_max_)
+    this->pausa_max_ = ora - this->t_scritto_;
+  this->pezzi_++;
   this->aspetto_risposta_ = true;
-  this->t_scritto_ = millis();
+  this->t_scritto_ = ora;
   return true;
 }
 
@@ -322,6 +344,7 @@ void OrgstaCoda::ricomincia_pagina_() {
     return;
   }
   ESP_LOGW(TAG, "pagina %d da rifare (tentativo %d)", (int) this->pagine_fatte_ + 1, (int) this->tentativi_);
+  this->rifatte_++;
   this->pagina_.clear();
   this->aspetto_risposta_ = false;
   this->primo_ = true;
@@ -402,6 +425,14 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       if (param->cfg_mtu.status == ESP_GATT_OK)
         this->mtu_ = param->cfg_mtu.mtu;
       break;
+    case ESP_GATTC_OPEN_EVT:
+      // 0.8.1: pezzi più grandi = meno pause, la testina non si ferma a metà (con mtu 23 un'etichetta da 4 cm sono più
+      // di 200 scritture). Se lo chiede già ESPHome la risposta arriva lo stesso in CFG_MTU
+      if (param->open.status == ESP_GATT_OK && !this->mtu_chiesto_) {
+        this->mtu_chiesto_ = true;
+        esp_ble_gattc_send_mtu_req(gattc_if, param->open.conn_id);
+      }
+      break;
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       auto *n = this->parent()->get_characteristic(SERVIZIO, CAR_NOTIFICA);
       auto *w = this->parent()->get_characteristic(SERVIZIO, CAR_SCRIVI);
@@ -449,6 +480,7 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->pronta_ = false;
       this->aspetto_risposta_ = false;
       this->mtu_ = 23;
+      this->mtu_chiesto_ = false;
       this->rx_.clear();
       if (era)
         ESP_LOGI(TAG, "scollegata dalla stampante");
@@ -552,6 +584,10 @@ void OrgstaCoda::loop() {
         break;
       }
       if (this->off_ >= this->pagina_.size()) {
+        this->ms_invio_ = ora - this->t_pagina_;
+        ESP_LOGI(TAG, "pagina mandata: %u byte in %u pezzi, %u ms, pausa più lunga %u ms (mtu %u)",
+                 (unsigned) this->byte_pagina_, (unsigned) this->pezzi_, (unsigned) this->ms_invio_,
+                 (unsigned) this->pausa_max_, (unsigned) this->mtu_);
         this->primo_ = false;
         this->vista_stampa_ = false;
         this->nuovo_stato_ = false;
