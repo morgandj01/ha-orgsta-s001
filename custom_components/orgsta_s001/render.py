@@ -358,9 +358,10 @@ class Canvas:
         for y in range(y0, y1, 6):
             self.d.rectangle((x * SS, y * SS, (x + 1) * SS - 1, min(y + 3, y1) * SS - 1), fill=0)
 
-    def border(self, inset: int = 3, radius: int = 6, width: int = 2) -> None:
+    def border(self, inset: int = 3, radius: int = 6, width: int = 2, x0: int | None = None) -> None:
+        # 0.9.6: x0 = il bordino comincia lì (col QR fuori dal bordino)
         self.d.rounded_rectangle(
-            (inset * SS, inset * SS, (self.w - inset) * SS - 1, (self.h - inset) * SS - 1),
+            ((inset if x0 is None else x0) * SS, inset * SS, (self.w - inset) * SS - 1, (self.h - inset) * SS - 1),
             radius=radius * SS,
             outline=0,
             width=width * SS,
@@ -436,6 +437,10 @@ def render(spec: LabelSpec) -> Image.Image:
         return [1.0] * n_title + [0.62] * n_sub
 
     nfc_w = int(round((H - 2 * m) * 0.62)) + 6 if spec.nfc else 0
+    # 0.9.6 (Morgan, 11 novembre): col bordino il QR sta fuori, alto quanto tutto il nastro, e il bordino gira solo
+    # intorno al nome
+    qr_fuori = bool(spec.border) and (
+        (layout == "qr" and spec.qr and lines_of(title, sub)) or (layout == "wifi" and spec.ssid))
     if layout == "cavo" and spec.diameter_mm:
         return _cavo_bandiera(spec, paper, H, m, lines_of(title, sub), ratios, nfc_w)
     if layout == "cavo":
@@ -478,7 +483,9 @@ def render(spec: LabelSpec) -> Image.Image:
         if not spec.qr:
             raise LabelError("serve il contenuto del QR")
         tl = lines_of(title, sub)
-        if tl:
+        if tl and qr_fuori:
+            _qr_fuori(c, spec.qr, tl, ratios, H, m, R)
+        elif tl:
             with_side(lambda b: c.qr(spec.qr, (b[0] - 2, b[1] - 3, b[2] + 1, b[3] + 3)), tl)
         else:
             c.qr(spec.qr, inner)
@@ -521,7 +528,10 @@ def render(spec: LabelSpec) -> Image.Image:
         lines = [(spec.ssid, "bold")]
         if spec.password:
             lines.append((spec.password, "regular"))
-        with_side(lambda b: c.qr(payload, (b[0] - 2, b[1] - 3, b[2] + 1, b[3] + 3)), lines)
+        if qr_fuori:
+            _qr_fuori(c, payload, lines, ratios, H, m, R)
+        else:
+            with_side(lambda b: c.qr(payload, (b[0] - 2, b[1] - 3, b[2] + 1, b[3] + 3)), lines)
     elif layout == "data":
         d = parse_date(spec.date, spec.extra.get("today"))
         lines = [(fmt_date(d), "bold")]
@@ -544,9 +554,21 @@ def render(spec: LabelSpec) -> Image.Image:
 
     if nfc_w:
         _segno_nfc(c, W - m - nfc_w + 6, m, W - m, H - m)
-    if spec.border:
+    if spec.border and qr_fuori:
+        c.border(x0=H + QR_STACCO)                       # il bordino solo intorno al nome, il QR fuori
+    elif spec.border:
         c.border()
     return c.finish(spec.invert)
+
+
+QR_STACCO = 4      # tra il QR e il bordino (punti)
+
+
+def _qr_fuori(c: "Canvas", data: str, lines, ratios, H: int, m: int, R: int) -> None:
+    """Il QR più grande possibile (tutta l'altezza stampabile) a sinistra, fuori dal bordino; il nome dentro"""
+    c.qr(data, (0, 0, H, H))
+    nt = sum(1 for _, s in lines if s == "bold")
+    c.text_block(lines, (H + QR_STACCO + m, m, R, H - m), align="left", ratios=ratios(nt, len(lines) - nt))
 
 
 def _naturale(spec: LabelSpec, layout: str, H: int, m: int, lines_of, ratios, icon) -> float:
@@ -560,6 +582,11 @@ def _naturale(spec: LabelSpec, layout: str, H: int, m: int, lines_of, ratios, ic
         return larghezza_naturale(lines, ratios(nt, len(lines) - nt), bh)
 
     tl = lines_of(title, sub)
+    if spec.border and layout == "qr" and spec.qr and tl:
+        return H + QR_STACCO + 2 * m + testo(tl) + 4
+    if spec.border and layout == "wifi" and spec.ssid:
+        righe = [(spec.ssid or "", "bold")] + ([(spec.password, "regular")] if spec.password else [])
+        return H + QR_STACCO + 2 * m + testo(righe) + 4
     if layout == "testo":
         return 2 * m + testo(tl) + (side if spec.icon else 0) + 4
     if layout in ("icona", "qr"):
@@ -648,7 +675,9 @@ def _cavo_bandiera(spec: LabelSpec, paper: Paper, H: int, m: int, tl, ratios, nf
     c.img.paste(pezzo.rotate(180), ((lato + giro + m) * SS, m * SS))
     c.vline_dashed(lato, 4, H - 4)
     c.vline_dashed(lato + giro, 4, H - 4)
-    if spec.border:
+    if spec.border and qr_fuori:
+        c.border(x0=H + QR_STACCO)                       # il bordino solo intorno al nome, il QR fuori
+    elif spec.border:
         c.border()
     return c.finish(spec.invert)
 
