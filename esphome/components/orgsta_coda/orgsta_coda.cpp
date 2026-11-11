@@ -33,8 +33,11 @@ static const uint32_t COLLEGA_MS = 25000;   // per trovarla e collegarsi
 static const uint32_t STATO_MS = 6000;      // STATUS_TIMEOUT
 static const uint32_t STAMPA_MS = 40000;    // COMPLETION_TIMEOUT
 static const uint32_t RISPOSTA_MS = 8000;   // una scrittura senza risposta
-static const uint32_t ATTESA_MS = 45000;    // le altre etichette dello stesso lavoro
+static const uint32_t ATTESA_MS = 120000;   // le altre etichette dello stesso lavoro (col Wi-Fi che riparte)
 static const uint8_t TENTATIVI = 3;
+static const uint32_t DOPO_CONSEGNA_MS = 700;  // la risposta dell'ultima consegna parte prima di spegnere il Wi-Fi
+static const uint32_t ESCLUSIVA_MS = 60000;    // al massimo col Wi-Fi spento, più ESCLUSIVA_PAGINA_MS per etichetta
+static const uint32_t ESCLUSIVA_PAGINA_MS = 45000;
 
 static const char *nome_fase(Fase f) {
   switch (f) {
@@ -109,6 +112,46 @@ void OrgstaCoda::scollega_() {
     this->parent()->disconnect();
 }
 
+bool OrgstaCoda::pronta_a_partire_() const {
+  if (this->coda_.empty())
+    return false;
+  if (!this->esclusiva_ || this->in_esclusiva_)
+    return true;
+  // tutte le etichette del lavoro (o la coda piena) e l'ultima risposta ad HA già partita
+  if (this->ricevute_ < this->totale_ && !this->piena_)
+    return false;
+  return millis() - this->t_ultima_metti_ > DOPO_CONSEGNA_MS;
+}
+
+void OrgstaCoda::radio_tutta_mia_() {
+  if (!this->esclusiva_ || this->in_esclusiva_)
+    return;
+  this->in_esclusiva_ = true;
+  this->t_esclusiva_ = millis();
+  ESP_LOGI(TAG, "radio tutta per la stampantina: Wi-Fi spento fino alla fine della stampa (%d etichette)",
+           (int) this->coda_.size());
+#ifdef USE_WIFI
+  if (wifi::global_wifi_component != nullptr)
+    wifi::global_wifi_component->disable();
+#endif
+}
+
+void OrgstaCoda::radio_restituita_() {
+  if (!this->in_esclusiva_)
+    return;
+  this->in_esclusiva_ = false;
+  ESP_LOGI(TAG, "stampa finita in %u ms: riaccendo Wi-Fi e ricerca", (unsigned) (millis() - this->t_esclusiva_));
+  if (this->scan_fermo_ && esp32_ble_tracker::global_esp32_ble_tracker != nullptr) {
+    this->scan_fermo_ = false;
+    esp32_ble_tracker::global_esp32_ble_tracker->set_scan_continuous(true);
+    esp32_ble_tracker::global_esp32_ble_tracker->start_scan_if_idle();
+  }
+#ifdef USE_WIFI
+  if (wifi::global_wifi_component != nullptr)
+    wifi::global_wifi_component->enable();
+#endif
+}
+
 void OrgstaCoda::errore_(const char *perche) {
   ESP_LOGW(TAG, "lavoro %s fermo: %s (%d/%d etichette, %d pagine)", this->lavoro_.c_str(), perche,
            (int) this->voci_fatte_, (int) this->totale_, (int) this->pagine_fatte_);
@@ -118,6 +161,7 @@ void OrgstaCoda::errore_(const char *perche) {
   this->pagina_.shrink_to_fit();
   this->scollega_();
   this->vai_(Fase::ERRORE);
+  this->radio_restituita_();
 }
 
 // ---- le azioni ----
@@ -151,6 +195,7 @@ void OrgstaCoda::metti(StringRef lavoro, int32_t indice, int32_t totale, int32_t
     this->copia_ = 0;
     this->tentativi_ = 0;
     this->errore_txt_.clear();
+    this->piena_ = false;
     if (this->fase_ == Fase::ERRORE)
       this->vai_(Fase::LIBERA);
   } else if (this->fase_ == Fase::ERRORE) {
@@ -169,6 +214,7 @@ void OrgstaCoda::metti(StringRef lavoro, int32_t indice, int32_t totale, int32_t
   // base64 → zlib, senza copie in più: la stringa sta nel buffer dell'API
   size_t massimo = dati.size() * 3 / 4 + 3;
   if (this->in_coda_byte_() + massimo > this->memoria_max_ || memoria_libera() < this->libera_min_ + massimo + 2048) {
+    this->piena_ = true;
     rifiuta("piena");
     return;
   }
@@ -192,6 +238,7 @@ void OrgstaCoda::metti(StringRef lavoro, int32_t indice, int32_t totale, int32_t
   this->ricevute_ = indice + 1;
   this->totale_ = totale;
   this->resta_ms_ = (uint32_t) std::clamp<int32_t>(resta, 0, 120) * 1000;
+  this->t_ultima_metti_ = millis();
   root["ok"] = true;
   this->stato(root);
 }
@@ -216,6 +263,7 @@ void OrgstaCoda::stato(JsonObject root) {
   root["pezzi"] = this->pezzi_;
   root["byte_pagina"] = this->byte_pagina_;
   root["rifatte"] = this->rifatte_;
+  root["esclusiva"] = this->esclusiva_;
   if (!this->st_.empty()) {
     root["st_cmd"] = this->st_cmd_;
     root["st"] = format_hex(this->st_);
@@ -372,8 +420,19 @@ void OrgstaCoda::pagina_fatta_() {
              (int) this->pagine_fatte_);
     this->pagina_.shrink_to_fit();
     this->vai_(Fase::FATTO);
+    if (this->in_esclusiva_) {   // finito e confermato dalla stampante: si stacca e si riaccende tutto
+      this->scollega_();
+      this->primo_ = true;
+      this->radio_restituita_();
+    }
   } else {
     this->vai_(Fase::ATTESA);
+    if (this->in_esclusiva_) {   // la coda era piena: HA manda le altre col Wi-Fi riacceso
+      this->scollega_();
+      this->primo_ = true;
+      this->piena_ = false;
+      this->radio_restituita_();
+    }
   }
 }
 
@@ -498,10 +557,26 @@ void OrgstaCoda::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
 void OrgstaCoda::loop() {
   const uint32_t ora = millis();
   const uint32_t in_fase = ora - this->t_fase_;
+  if (this->in_esclusiva_) {
+    // collegata: anche la ricerca si ferma, la radio parla solo con la stampantina
+    if (!this->scan_fermo_ && this->collegata_() && esp32_ble_tracker::global_esp32_ble_tracker != nullptr) {
+      this->scan_fermo_ = true;
+      esp32_ble_tracker::global_esp32_ble_tracker->stop_scan();
+    }
+    const uint32_t massimo = ESCLUSIVA_MS + ESCLUSIVA_PAGINA_MS * (uint32_t) std::max<int32_t>(1, this->totale_);
+    if (ora - this->t_esclusiva_ > massimo) {
+      this->errore_("tempo");
+      return;
+    }
+  }
   switch (this->fase_) {
     case Fase::LIBERA:
     case Fase::FATTO:
+      if (!this->coda_.empty() && !this->pronta_a_partire_()) {
+        break;  // aspetta tutte le etichette del lavoro
+      }
       if (!this->coda_.empty()) {
+        this->radio_tutta_mia_();
         if (this->collegata_() && !this->primo_) {
           this->prepara_pagina_();
           if (this->fase_ != Fase::ERRORE)
@@ -521,7 +596,8 @@ void OrgstaCoda::loop() {
       break;
 
     case Fase::ATTESA:
-      if (!this->coda_.empty()) {
+      if (!this->coda_.empty() && this->pronta_a_partire_()) {
+        this->radio_tutta_mia_();
         if (this->collegata_()) {
           this->prepara_pagina_();
           if (this->fase_ != Fase::ERRORE)

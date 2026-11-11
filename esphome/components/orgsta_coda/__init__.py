@@ -16,6 +16,7 @@ CODEOWNERS = ["@morgandj01"]
 
 CONF_MEMORIA_KB = "memoria_kb"
 CONF_LIBERA_KB = "libera_kb"
+CONF_ESCLUSIVA = "esclusiva"
 
 orgsta_ns = cg.esphome_ns.namespace("orgsta_coda")
 OrgstaCoda = orgsta_ns.class_("OrgstaCoda", cg.Component, ble_client.BLEClientNode)
@@ -28,6 +29,8 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_MEMORIA_KB, default=64): cv.int_range(min=8, max=512),
             # quanta memoria deve restare sempre libera per il resto (Wi-Fi, Bluetooth, API, luci)
             cv.Optional(CONF_LIBERA_KB, default=36): cv.int_range(min=16, max=256),
+            # 0.9.0: mentre stampa spegne Wi-Fi e ricerca Bluetooth (la radio tutta per la stampantina), poi riaccende
+            cv.Optional(CONF_ESCLUSIVA, default=True): cv.boolean,
         }
     )
     .extend(cv.COMPONENT_SCHEMA)
@@ -40,3 +43,4 @@ async def to_code(config):
     await cg.register_component(var, config)
     await ble_client.register_ble_node(var, config)
     cg.add(var.set_memoria(config[CONF_MEMORIA_KB] * 1024, config[CONF_LIBERA_KB] * 1024))
+    cg.add(var.set_esclusiva(config[CONF_ESCLUSIVA]))

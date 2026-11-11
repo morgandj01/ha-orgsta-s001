@@ -11,6 +11,10 @@
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/string_ref.h"
+#include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
+#ifdef USE_WIFI
+#include "esphome/components/wifi/wifi_component.h"
+#endif
 
 namespace esphome::orgsta_coda {
 
@@ -49,6 +53,7 @@ class OrgstaCoda : public Component, public ble_client::BLEClientNode {
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
 
+  void set_esclusiva(bool e) { this->esclusiva_ = e; }
   void set_memoria(uint32_t massimo, uint32_t libera) {
     this->memoria_max_ = massimo;
     this->libera_min_ = libera;
@@ -74,6 +79,17 @@ class OrgstaCoda : public Component, public ble_client::BLEClientNode {
   size_t in_coda_byte_() const;
   bool ultima_pagina_() const;
   void frame_(uint8_t cmd, const uint8_t *payload, uint16_t n);
+  // 0.9.0 (Morgan, 11 novembre: «deve prendersi tutta l'antenna bluetooth per lui»): mentre stampa il proxy spegne il
+  // Wi-Fi e la ricerca Bluetooth, così la radio è tutta per la stampantina; finito (o fermo) riaccende tutto
+  bool pronta_a_partire_() const;
+  void radio_tutta_mia_();
+  void radio_restituita_();
+  bool esclusiva_{true};
+  bool in_esclusiva_{false};
+  bool scan_fermo_{false};
+  bool piena_{false};
+  uint32_t t_esclusiva_{0};
+  uint32_t t_ultima_metti_{0};
 
   // il lavoro
   std::string lavoro_;

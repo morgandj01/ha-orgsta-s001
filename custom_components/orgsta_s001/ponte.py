@@ -36,6 +36,7 @@ CHIAMATA_S = 20.0          # una chiamata all'ESP (consegna di un'etichetta o lo
 PIENA_S = 1.0              # coda piena: si riprova appena se ne stampa una
 GIRO_S = 0.8               # ogni quanto si guarda a che punto è
 PAGINA_S = 60.0            # al massimo per pagina, compreso il collegamento
+RIPARTE_S = 60.0           # 0.9.0: il proxy che riaccende il Wi-Fi e torna in HA dopo la stampa
 SENZA_RISPOSTA_S = 90.0    # il proxy non risponde (Wi-Fi giù): dopo tanto ci si arrende
 RESTA_S = 8                # il proxy resta collegato alla stampantina per la prossima etichetta
 RSSI_MIN = -100            # sotto non si prova nemmeno
@@ -185,7 +186,11 @@ class Ponte:
         modo = MODI.get(mode, 1)
         zipped = [base64.b64encode(zlib.compress(p.rows, 9)).decode() for p in pagine]
         silenzio_da: float | None = None
-        limite = time.monotonic() + 30 + PAGINA_S * sum(max(1, p.copie) for p in pagine)
+        copie = sum(max(1, p.copie) for p in pagine)
+        # 0.9.0: mentre stampa il proxy spegne il Wi-Fi (la radio tutta per la stampantina) e torna quando ha finito:
+        # il silenzio dopo la consegna è normale, si aspetta quanto può durare la stampa più il Wi-Fi che riparte
+        silenzio_max = max(SENZA_RISPOSTA_S, 60 + 45 * copie + RIPARTE_S)
+        limite = time.monotonic() + 30 + PAGINA_S * copie + RIPARTE_S
         i = 0
         while True:
             if time.monotonic() > limite:
@@ -214,7 +219,7 @@ class Ponte:
                         continue
                     raise PrinterError("connect", f"proxy {self.proxy.nome}: {err or 'non risponde'}") from err
                 silenzio_da = silenzio_da or time.monotonic()
-                if time.monotonic() - silenzio_da > SENZA_RISPOSTA_S:
+                if time.monotonic() - silenzio_da > silenzio_max:
                     raise PrinterError("write", f"proxy {self.proxy.nome} sparito: {err}") from err
                 await asyncio.sleep(2)
                 continue
