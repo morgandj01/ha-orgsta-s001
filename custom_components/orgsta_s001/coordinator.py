@@ -92,8 +92,10 @@ NEW_ROLL_PAPER = "14x30"
 # i rotoli originali ORGSTA (col tag NFC) di Morgan: bianchi 12 x 40 mm
 ORIGINAL_PAPER = "12x40"
 ORIGINAL_COLOR = "bianco"
-# le letture dello stato dopo l'accensione (secondi): il coperchio aperto e richiuso si vede anche senza stampare
-AUTO_READS = (4, 30, 90)
+# le letture dello stato dopo l'accensione (secondi). 0.10.2 (Morgan, 12 novembre: «facciamola prendere appena la sente
+# accesa solo per vedere lo stato della batteria e poi si disconnette [...] anche se altri la sentono comunque la lasciano
+# libera»): una sola, poi resta libera fino alla stampa; il rotolo cambiato si vede alla prima stampa
+AUTO_READS = (4,)
 
 
 type S001ConfigEntry = ConfigEntry["S001Coordinator"]
