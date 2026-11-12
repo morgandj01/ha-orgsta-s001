@@ -307,15 +307,19 @@ class Canvas:
             raise LabelError("libreria qrcode non disponibile") from err
         x0, y0, x1, y1 = box
         side = min(x1 - x0, y1 - y0)
+        # 0.10.1: il QR più grande che sta. M se viene grande uguale, se no L (meno quadratini, quadratini più grossi:
+        # il Wi-Fi da 29 moduli a 3 punti l'uno = 87 punti invece di 66)
+        scelta = None
         for ec in (ERROR_CORRECT_M, ERROR_CORRECT_L):
             q = qrcode.QRCode(border=0, error_correction=ec)
             q.add_data(data)
             q.make(fit=True)
-            m = q.get_matrix()
-            n = len(m)
-            mod = side // n
-            if mod >= 2 or (mod >= 1 and ec == ERROR_CORRECT_L):
-                break
+            mm = q.get_matrix()
+            md = side // len(mm)
+            if md >= 1 and (scelta is None or md * len(mm) > scelta[1] * len(scelta[0])):
+                scelta = (mm, md)
+        m, mod = scelta if scelta else ([[0]], 0)
+        n = len(m)
         if mod < 1:
             raise LabelError("QR troppo lungo per questa etichetta")
         size = mod * n
@@ -646,15 +650,33 @@ def _freccia_apri(c: "Canvas", x0: int, x1: int, H: int) -> None:
 
 
 def _solo_qr(spec: LabelSpec, paper: Paper, H: int) -> Image.Image:
-    """Solo il QR, il più grande che sta (0.10.0): lungo 15 mm, il QR alto quanto tutta la stampa"""
+    """Solo il QR, il più grande che sta (0.10.0): il QR alto quanto tutta la stampa. 0.10.1 (Morgan, 12 novembre): col
+    titolo, una parola corta scritta in verticale di lato («WI-FI»), così il QR resta grande uguale"""
     if not spec.qr:
         raise LabelError("serve il contenuto del QR")
-    W = paper.length_px or max(H, int(round(float(spec.length_mm) * 8)) if spec.length_mm else 120)
+    scritta = " ".join((spec.title or "").split()).upper()[:12]
+    lato = SOLO_QR_LATO if scritta else 0
+    W = paper.length_px or max(H + lato, int(round(float(spec.length_mm) * 8)) if spec.length_mm else 120)
     c = Canvas(W, H)
-    x = (W - H) // 2
+    x = (W - H - lato) // 2 + lato
     c.qr(spec.qr, (x, 0, x + H, H))
+    if scritta:
+        # su una striscia a parte, poi girata: si legge dal basso in su col nastro in orizzontale
+        alto, largo = H - 4, lato - 4
+        lab = Image.new("L", (alto * SS, largo * SS), 0)
+        fs = 60
+        while fs > 6:
+            ft = _font(str(FONT_BOLD), fs * SS)
+            a, bb, cc, e = ft.getbbox(scritta)
+            if cc - a <= alto * SS and e - bb <= largo * SS:
+                break
+            fs -= 1
+        ImageDraw.Draw(lab).text(((alto * SS - (a + cc)) / 2, (largo * SS - (bb + e)) / 2), scritta, font=ft, fill=255)
+        lab = lab.rotate(90, expand=True)
+        c.img.paste(Image.new("L", lab.size, 0), (max(0, x - lato + 1) * SS, 2 * SS), lab)
     return c.finish(spec.invert)
 
+SOLO_QR_LATO = 20  # la striscia della scritta in verticale accanto al QR (punti)
 QR_STACCO = 4      # tra il QR e il bordino (punti)
 
 
